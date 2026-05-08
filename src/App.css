@@ -1,0 +1,565 @@
+/* ── Fiori Design Tokens ────────────────────────────────────── */
+:root {
+  --f-blue:        #0070F2;
+  --f-blue-dark:   #0064D9;
+  --f-blue-light:  #EBF5FF;
+  --f-bg:          #F5F6F7;
+  --f-white:       #FFFFFF;
+  --f-border:      #C8CAD0;
+  --f-border-input:#89919A;
+  --f-text:        #1D2D3E;
+  --f-text-sub:    #556B82;
+  --f-text-muted:  #8696A9;
+  --f-success:     #107E3E;
+  --f-success-bg:  #F1FAF1;
+  --f-success-bd:  #ABD4B4;
+  --f-error:       #BB0000;
+  --f-error-bg:    #FFF0F0;
+  --f-error-bd:    #E8A0A0;
+  --f-shadow-card: 0 1px 2px rgba(0,0,0,0.06), 0 2px 6px rgba(0,0,0,0.06);
+  --f-radius:      8px;
+  --f-radius-sm:   4px;
+  --f-font:        '72', '72full', Arial, Helvetica, sans-serif;
+}
+
+/* ── Reset ──────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: var(--f-font);
+  font-size: 14px;
+  color: var(--f-text);
+  background: var(--f-bg);
+  -webkit-font-smoothing: antialiased;
+}
+
+#root {
+  width: 100%;
+  max-width: 100%;
+  border-inline: none;
+  min-height: 100svh;
+  display: flex;
+  flex-direction: column;
+}
+
+h1, h2, p { margin: 0; }
+
+/* ── App container ──────────────────────────────────────────── */
+.app {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 100svh;
+}
+
+/* ── Shell Bar ──────────────────────────────────────────────── */
+.shell-bar {
+  height: 44px;
+  background: var(--f-white);
+  border-bottom: 1px solid var(--f-border);
+  display: flex;
+  align-items: center;
+  padding: 0 20px;
+  gap: 14px;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+}
+
+.shell-logo {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  background: var(--f-blue);
+  border-radius: var(--f-radius-sm);
+  flex-shrink: 0;
+}
+
+.shell-logo-mark {
+  font-size: 10px;
+  font-weight: 700;
+  color: #fff;
+  letter-spacing: 0.02em;
+  font-family: var(--f-font);
+}
+
+.shell-titles {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+}
+
+.shell-app-name {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--f-text);
+  letter-spacing: 0;
+}
+
+.shell-app-sub {
+  font-size: 12px;
+  color: var(--f-text-sub);
+  border-left: 1px solid var(--f-border);
+  padding-left: 14px;
+}
+
+/* ── Page content ───────────────────────────────────────────── */
+.page-content {
+  flex: 1;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 32px 16px 40px;
+}
+
+/* ── Card ───────────────────────────────────────────────────── */
+.card {
+  width: 100%;
+  max-width: 520px;
+  background: var(--f-white);
+  border: 1px solid var(--f-border);
+  border-radius: var(--f-radius);
+  box-shadow: var(--f-shadow-card);
+}
+
+/* ── Card body ──────────────────────────────────────────────── */
+.card-body {
+  padding: 28px 28px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+/* ── Field & label ──────────────────────────────────────────── */
+.field { display: flex; flex-direction: column; }
+
+.field-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--f-text-sub);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 6px;
+}
+
+/* ── Amount input ───────────────────────────────────────────── */
+.amount-box {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--f-white);
+  border: 1px solid var(--f-border-input);
+  border-radius: var(--f-radius-sm);
+  padding: 0 14px;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.amount-box:focus-within {
+  border-color: var(--f-blue);
+  box-shadow: 0 0 0 2px rgba(0, 112, 242, 0.18);
+}
+
+.amount-symbol {
+  font-size: 15px;
+  font-weight: 400;
+  color: var(--f-text-muted);
+  flex-shrink: 0;
+}
+
+.amount-input {
+  flex: 1;
+  background: none;
+  border: none;
+  outline: none;
+  font-size: 26px;
+  font-weight: 600;
+  color: var(--f-text);
+  padding: 12px 0;
+  min-width: 0;
+  font-family: var(--f-font);
+}
+
+.amount-input::placeholder { color: var(--f-text-muted); }
+.amount-input::-webkit-inner-spin-button,
+.amount-input::-webkit-outer-spin-button { appearance: none; }
+
+/* ── Currency pair row ──────────────────────────────────────── */
+.pair-row {
+  display: grid;
+  grid-template-columns: 1fr 44px 1fr;
+  align-items: end;
+  gap: 10px;
+}
+
+.select-group { display: flex; flex-direction: column; }
+
+.select-wrapper { position: relative; }
+
+.currency-select {
+  appearance: none;
+  width: 100%;
+  background: var(--f-white);
+  border: 1px solid var(--f-border-input);
+  border-radius: var(--f-radius-sm);
+  color: var(--f-text);
+  font-size: 13px;
+  font-weight: 400;
+  font-family: var(--f-font);
+  padding: 10px 32px 10px 12px;
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  line-height: 1.4;
+}
+
+.currency-select:focus {
+  outline: none;
+  border-color: var(--f-blue);
+  box-shadow: 0 0 0 2px rgba(0, 112, 242, 0.18);
+}
+
+.currency-select option,
+.currency-select optgroup {
+  background: var(--f-white);
+  color: var(--f-text);
+}
+
+.select-arrow {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--f-text-muted);
+  font-size: 12px;
+  pointer-events: none;
+}
+
+/* ── Swap button (secondary style) ─────────────────────────── */
+.swap-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 36px;
+  border-radius: var(--f-radius-sm);
+  border: 1px solid var(--f-blue);
+  background: var(--f-white);
+  color: var(--f-blue);
+  font-size: 18px;
+  cursor: pointer;
+  transition: background 0.15s;
+  flex-shrink: 0;
+  align-self: end;
+}
+
+.swap-btn:hover {
+  background: var(--f-blue-light);
+}
+
+.swap-btn.rotating {
+  transform: rotate(180deg);
+  transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* ── Result panel ───────────────────────────────────────────── */
+.result-card {
+  background: var(--f-blue-light);
+  border: 1px solid rgba(0, 112, 242, 0.2);
+  border-left: 4px solid var(--f-blue);
+  border-radius: var(--f-radius-sm);
+  padding: 20px 20px 16px;
+  text-align: center;
+}
+
+.result-flags {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  font-size: 22px;
+  margin-bottom: 12px;
+}
+
+.result-arrow {
+  font-size: 14px;
+  color: var(--f-blue);
+}
+
+.result-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.result-sym {
+  font-size: 18px;
+  font-weight: 400;
+  color: var(--f-text-sub);
+}
+
+.result-value {
+  font-size: 40px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--f-blue);
+  font-family: var(--f-font);
+  line-height: 1;
+}
+
+.result-code {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--f-text-sub);
+}
+
+.rate-line {
+  font-size: 12px;
+  color: var(--f-text-muted);
+  border-top: 1px solid rgba(0, 112, 242, 0.15);
+  padding-top: 10px;
+  margin-top: 2px;
+}
+
+/* ── Footer ─────────────────────────────────────────────────── */
+.card-footer {
+  padding: 16px 28px;
+  border-top: 1px solid var(--f-border);
+  background: #FAFAFA;
+  border-radius: 0 0 var(--f-radius) var(--f-radius);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* ── Status messages ────────────────────────────────────────── */
+.status-msg {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 13px;
+  line-height: 1.45;
+  padding: 8px 12px;
+  border-radius: var(--f-radius-sm);
+  border: 1px solid transparent;
+}
+
+.status-icon {
+  font-size: 11px;
+  font-weight: 700;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.status-error {
+  color: var(--f-error);
+  background: var(--f-error-bg);
+  border-color: var(--f-error-bd);
+}
+
+.status-success {
+  color: var(--f-success);
+  background: var(--f-success-bg);
+  border-color: var(--f-success-bd);
+}
+
+/* ── Footer controls row ────────────────────────────────────── */
+.footer-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+/* ── Primary button ─────────────────────────────────────────── */
+.btn-primary {
+  font-size: 13px;
+  font-weight: 700;
+  font-family: var(--f-font);
+  color: #fff;
+  background: var(--f-blue);
+  border: 1px solid var(--f-blue);
+  border-radius: var(--f-radius-sm);
+  padding: 8px 18px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+  white-space: nowrap;
+  line-height: 1.4;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: var(--f-blue-dark);
+  border-color: var(--f-blue-dark);
+}
+
+.btn-primary:active:not(:disabled) {
+  background: #004FB3;
+  border-color: #004FB3;
+}
+
+.btn-primary:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.footer-timestamp {
+  font-size: 12px;
+  color: var(--f-text-muted);
+  text-align: right;
+}
+
+/* ── Converter layout wrapper ───────────────────────────────── */
+.converter-layout {
+  width: 100%;
+  max-width: 520px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* ── Country cards grid ─────────────────────────────────────── */
+.country-cards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  align-items: start;
+}
+
+.country-cards--single {
+  grid-template-columns: 1fr;
+}
+
+/* ── Country card ───────────────────────────────────────────── */
+.country-card {
+  background: var(--f-white);
+  border: 1px solid var(--f-border);
+  border-radius: var(--f-radius);
+  box-shadow: var(--f-shadow-card);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* ── Country card header ────────────────────────────────────── */
+.country-card-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  background: var(--f-blue-light);
+  border-bottom: 1px solid rgba(0, 112, 242, 0.15);
+}
+
+.country-flag {
+  font-size: 24px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.country-header-info {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.country-name {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--f-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.country-code-badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--f-blue);
+  background: rgba(0, 112, 242, 0.1);
+  border-radius: 2px;
+  padding: 1px 5px;
+}
+
+/* ── Country card body ──────────────────────────────────────── */
+.country-card-body {
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  flex: 1;
+}
+
+.country-data-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.cdi-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--f-text-muted);
+}
+
+.cdi-value {
+  font-size: 12px;
+  color: var(--f-text);
+  line-height: 1.35;
+}
+
+.country-data-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+/* ── Country fact footer ────────────────────────────────────── */
+.country-fact {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 9px 14px;
+  border-top: 1px solid var(--f-border);
+  background: #FAFAFA;
+  font-size: 11px;
+  color: var(--f-text-sub);
+  line-height: 1.5;
+}
+
+.country-fact-icon {
+  flex-shrink: 0;
+  font-size: 11px;
+  margin-top: 1px;
+}
+
+/* ── Responsive ─────────────────────────────────────────────── */
+@media (max-width: 540px) {
+  .shell-app-sub { display: none; }
+  .page-content { padding: 16px 12px 28px; }
+
+  .card-body { padding: 20px 16px 16px; gap: 18px; }
+  .card-footer { padding: 14px 16px; }
+
+  .pair-row { grid-template-columns: 1fr 38px 1fr; gap: 6px; }
+  .swap-btn { width: 38px; }
+  .currency-select { font-size: 12px; padding: 10px 28px 10px 10px; }
+
+  .result-value { font-size: 32px; }
+
+  .footer-controls { flex-direction: column; align-items: stretch; }
+  .btn-primary { text-align: center; }
+  .footer-timestamp { text-align: left; }
+
+  .country-cards { grid-template-columns: 1fr; }
+  .country-cards--single { grid-template-columns: 1fr; }
+}
