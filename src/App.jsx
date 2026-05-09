@@ -101,6 +101,40 @@ function CountryCard({ code }) {
   )
 }
 
+function ConversionHistory({ history }) {
+  return (
+    <div className="history-card">
+      <div className="history-header">
+        <span className="history-title">Historial de conversiones</span>
+      </div>
+      {history.length === 0 ? (
+        <p className="history-empty">Sin conversiones recientes</p>
+      ) : (
+        <ul className="history-list">
+          {history.map(entry => (
+            <li key={entry.id} className="history-item">
+              <div className="history-pair">
+                <span>{entry.fromFlag}</span>
+                <span className="history-from">
+                  {entry.fromSymbol} {formatResult(entry.amount, entry.from)} {entry.from}
+                </span>
+                <span className="history-arrow">→</span>
+                <span>{entry.toFlag}</span>
+                <span className="history-to">
+                  {entry.toSymbol} {formatResult(entry.result, entry.to)} {entry.to}
+                </span>
+              </div>
+              <span className="history-time">
+                {entry.time.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
 export default function App() {
   const [amount, setAmount]           = useState('1')
   const [from, setFrom]               = useState('USD')
@@ -110,6 +144,29 @@ export default function App() {
   const [loading, setLoading]         = useState(false)
   const [error, setError]             = useState(null)
   const [lastUpdated, setLastUpdated] = useState(null)
+  const [history, setHistory]           = useState([])
+
+  function addToHistoryWith(amt, fromCode, toCode, res) {
+    if (amt <= 0 || !isFinite(res)) return
+    setHistory(prev => {
+      const last = prev[0]
+      if (last && last.from === fromCode && last.to === toCode && last.amount === amt) return prev
+      const fromData = CURRENCIES.find(c => c.code === fromCode)
+      const toData   = CURRENCIES.find(c => c.code === toCode)
+      return [{
+        id: Date.now(),
+        amount: amt,
+        from: fromCode,
+        to: toCode,
+        result: res,
+        fromFlag: fromData?.flag ?? '',
+        toFlag: toData?.flag ?? '',
+        fromSymbol: fromData?.symbol ?? fromCode,
+        toSymbol: toData?.symbol ?? toCode,
+        time: new Date(),
+      }, ...prev].slice(0, 5)
+    })
+  }
 
   async function loadRates() {
     setLoading(true)
@@ -136,6 +193,7 @@ export default function App() {
   const toCur   = CURRENCIES.find(c => c.code === to)
 
   function handleSwap() {
+    addToHistoryWith(numericAmount, to, from, convert(numericAmount, to, from, rates))
     setRotating(true)
     setTimeout(() => setRotating(false), 380)
     setFrom(to)
@@ -171,12 +229,13 @@ export default function App() {
                     min="0"
                     placeholder="0"
                     onChange={e => setAmount(e.target.value)}
+                    onBlur={() => addToHistoryWith(numericAmount, from, to, result)}
                   />
                 </div>
               </div>
 
               <div className="pair-row">
-                <CurrencySelect value={from} onChange={setFrom} label="Moneda origen" />
+                <CurrencySelect value={from} onChange={v => { addToHistoryWith(numericAmount, v, to, convert(numericAmount, v, to, rates)); setFrom(v) }} label="Moneda origen" />
                 <button
                   className={`swap-btn${rotating ? ' rotating' : ''}`}
                   onClick={handleSwap}
@@ -184,7 +243,7 @@ export default function App() {
                 >
                   ⇄
                 </button>
-                <CurrencySelect value={to} onChange={setTo} label="Moneda destino" />
+                <CurrencySelect value={to} onChange={v => { addToHistoryWith(numericAmount, from, v, convert(numericAmount, from, v, rates)); setTo(v) }} label="Moneda destino" />
               </div>
 
               <div className="result-card">
@@ -241,6 +300,8 @@ export default function App() {
             <CountryCard code={from} />
             {from !== to && <CountryCard code={to} />}
           </div>
+
+          <ConversionHistory history={history} />
 
         </div>
       </main>
