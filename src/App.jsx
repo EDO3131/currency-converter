@@ -2,24 +2,25 @@ import { useState, useEffect } from 'react'
 import './App.css'
 import { fetchRates } from './services/api'
 import COUNTRY_DATA, { CURRENCIES, FALLBACK_RATES } from './data/countriesData'
+import { getCountriesData } from './services/countriesService'
 
 function convert(amount, from, to, rates) {
   return (amount / rates[from]) * rates[to]
 }
 
-function formatResult(value, code) {
+function formatResult(value, code, countryData) {
   if (!isFinite(value)) return '—'
-  const decimals = COUNTRY_DATA[code]?.decimals ?? 2
+  const decimals = countryData[code]?.decimals ?? 2
   return new Intl.NumberFormat('es-ES', {
     minimumFractionDigits: decimals,
     maximumFractionDigits: decimals,
   }).format(value)
 }
 
-function CurrencySelect({ value, onChange, label }) {
-  const americas = CURRENCIES.filter(c => c.region === 'América')
-  const europe   = CURRENCIES.filter(c => c.region === 'Europa')
-  const asia     = CURRENCIES.filter(c => c.region === 'Asia')
+function CurrencySelect({ value, onChange, label, currencies }) {
+  const americas = currencies.filter(c => c.region === 'América')
+  const europe   = currencies.filter(c => c.region === 'Europa')
+  const asia     = currencies.filter(c => c.region === 'Asia')
 
   return (
     <div className="select-group">
@@ -58,8 +59,8 @@ function CurrencySelect({ value, onChange, label }) {
   )
 }
 
-function CountryCard({ code }) {
-  const data = COUNTRY_DATA[code]
+function CountryCard({ code, countryData }) {
+  const data = countryData[code]
   if (!data) return null
 
   return (
@@ -101,7 +102,7 @@ function CountryCard({ code }) {
   )
 }
 
-function ConversionHistory({ history }) {
+function ConversionHistory({ history, countryData }) {
   return (
     <div className="history-card">
       <div className="history-header">
@@ -116,12 +117,12 @@ function ConversionHistory({ history }) {
               <div className="history-pair">
                 <span>{entry.fromFlag}</span>
                 <span className="history-from">
-                  {entry.fromSymbol} {formatResult(entry.amount, entry.from)} {entry.from}
+                  {entry.fromSymbol} {formatResult(entry.amount, entry.from, countryData)} {entry.from}
                 </span>
                 <span className="history-arrow">→</span>
                 <span>{entry.toFlag}</span>
                 <span className="history-to">
-                  {entry.toSymbol} {formatResult(entry.result, entry.to)} {entry.to}
+                  {entry.toSymbol} {formatResult(entry.result, entry.to, countryData)} {entry.to}
                 </span>
               </div>
               <span className="history-time">
@@ -144,15 +145,24 @@ export default function App() {
   const [loading, setLoading]         = useState(false)
   const [error, setError]             = useState(null)
   const [lastUpdated, setLastUpdated] = useState(null)
-  const [history, setHistory]           = useState([])
+  const [history, setHistory]         = useState([])
+  const [countryData, setCountryData] = useState(COUNTRY_DATA)
+  const [currencies, setCurrencies]   = useState(CURRENCIES)
+
+  useEffect(() => {
+    getCountriesData().then(({ countryData: cd, currencies: cur }) => {
+      setCountryData(cd)
+      setCurrencies(cur)
+    })
+  }, [])
 
   function addToHistoryWith(amt, fromCode, toCode, res) {
     if (amt <= 0 || !isFinite(res)) return
     setHistory(prev => {
       const last = prev[0]
       if (last && last.from === fromCode && last.to === toCode && last.amount === amt) return prev
-      const fromData = CURRENCIES.find(c => c.code === fromCode)
-      const toData   = CURRENCIES.find(c => c.code === toCode)
+      const fromData = currencies.find(c => c.code === fromCode)
+      const toData   = currencies.find(c => c.code === toCode)
       return [{
         id: Date.now(),
         amount: amt,
@@ -189,8 +199,8 @@ export default function App() {
   const result   = convert(numericAmount, from, to, rates)
   const unitRate = convert(1, from, to, rates)
 
-  const fromCur = CURRENCIES.find(c => c.code === from)
-  const toCur   = CURRENCIES.find(c => c.code === to)
+  const fromCur = currencies.find(c => c.code === from)
+  const toCur   = currencies.find(c => c.code === to)
 
   function handleSwap() {
     addToHistoryWith(numericAmount, to, from, convert(numericAmount, to, from, rates))
@@ -235,7 +245,7 @@ export default function App() {
               </div>
 
               <div className="pair-row">
-                <CurrencySelect value={from} onChange={v => { addToHistoryWith(numericAmount, v, to, convert(numericAmount, v, to, rates)); setFrom(v) }} label="Moneda origen" />
+                <CurrencySelect value={from} onChange={v => { addToHistoryWith(numericAmount, v, to, convert(numericAmount, v, to, rates)); setFrom(v) }} label="Moneda origen" currencies={currencies} />
                 <button
                   className={`swap-btn${rotating ? ' rotating' : ''}`}
                   onClick={handleSwap}
@@ -243,7 +253,7 @@ export default function App() {
                 >
                   ⇄
                 </button>
-                <CurrencySelect value={to} onChange={v => { addToHistoryWith(numericAmount, from, v, convert(numericAmount, from, v, rates)); setTo(v) }} label="Moneda destino" />
+                <CurrencySelect value={to} onChange={v => { addToHistoryWith(numericAmount, from, v, convert(numericAmount, from, v, rates)); setTo(v) }} label="Moneda destino" currencies={currencies} />
               </div>
 
               <div className="result-card">
@@ -254,11 +264,11 @@ export default function App() {
                 </div>
                 <div className="result-row">
                   <span className="result-sym">{toCur?.symbol}</span>
-                  <span className="result-value">{formatResult(result, to)}</span>
+                  <span className="result-value">{formatResult(result, to, countryData)}</span>
                   <span className="result-code">{to}</span>
                 </div>
                 <p className="rate-line">
-                  1 {from} = {formatResult(unitRate, to)} {to}
+                  1 {from} = {formatResult(unitRate, to, countryData)} {to}
                 </p>
               </div>
             </div>
@@ -297,11 +307,11 @@ export default function App() {
           </article>
 
           <div className={`country-cards${from === to ? ' country-cards--single' : ''}`}>
-            <CountryCard code={from} />
-            {from !== to && <CountryCard code={to} />}
+            <CountryCard code={from} countryData={countryData} />
+            {from !== to && <CountryCard code={to} countryData={countryData} />}
           </div>
 
-          <ConversionHistory history={history} />
+          <ConversionHistory history={history} countryData={countryData} />
 
         </div>
       </main>
