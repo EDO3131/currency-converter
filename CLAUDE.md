@@ -7,7 +7,7 @@ tasas en tiempo real desde frankfurter.app, diseño SAP Fiori, sin librerías ad
 ## Stack
 
 - React 19.2.5 · Vite 8.0.10 · CSS puro · fetch nativo · Vercel (hosting)
-- **Restricción activa:** no instalar paquetes npm más allá de los existentes
+- **Restricción activa:** no instalar paquetes npm más allá de los existentes (`@supabase/supabase-js` aprobado)
 
 ## Estructura
 
