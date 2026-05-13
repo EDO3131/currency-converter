@@ -1,13 +1,13 @@
 # Contexto del proyecto — Currency Converter
 
 > Documento de referencia para iniciar una sesión nueva de Claude Code.
-> Refleja el estado del proyecto al 12-05-2026.
+> Refleja el estado del proyecto al 13-05-2026.
 
 ---
 
 ## 1. Descripción general
 
-Aplicación web de conversión de divisas que cubre **27 monedas** de América (10), Europa (10) y Asia (7). Obtiene tasas de cambio en tiempo real desde la API pública de frankfurter.app y muestra, para cada moneda seleccionada, una card con datos económicos del país emisor.
+Aplicación web de conversión de divisas que cubre **30 monedas** de América (10), Europa (10), Asia (7), África (5) y Oceanía (3). Obtiene tasas de cambio en tiempo real desde la API pública de frankfurter.app y muestra, para cada moneda seleccionada, una card con datos económicos del país emisor. Incluye un ticker animado con las 10 acciones globales más relevantes y un modal de mercado local por divisa.
 
 La interfaz sigue el sistema de diseño **SAP Fiori**: paleta azul `#0070F2`, fondo gris claro `#F5F6F7`, cards blancas, tipografía limpia, indicadores semánticos de estado.
 
@@ -24,6 +24,7 @@ La interfaz sigue el sistema de diseño **SAP Fiori**: paleta azul `#0070F2`, fo
 | Empaquetador JSX | `@vitejs/plugin-react` (Babel) | 6.0.1 |
 | Linting | ESLint + plugins react-hooks / react-refresh | 10.x |
 | Base de datos | Supabase (PostgreSQL) | `@supabase/supabase-js` |
+| API de acciones | Twelve Data | REST directo (CORS libre) |
 
 **Sin librerías adicionales de UI, routing ni estado global.** Restricción explícita del proyecto.
 
@@ -38,27 +39,33 @@ currency-converter/
 ├── vite.config.js              # Config de Vite + proxy de desarrollo para CORS.
 ├── vercel.json                 # Rewrite rules para proxy en producción (Vercel).
 ├── package.json                # Dependencias: react, react-dom, tooling Vite, @supabase/supabase-js.
-├── .env                        # Variables locales (gitignored): VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY.
+├── .env                        # Variables locales (gitignored): VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY, VITE_TWELVE_DATA_KEY.
 │
 ├── docs/
 │   └── CONTEXT.md              # Este archivo.
 │
 └── src/
     ├── main.jsx                # Monta <App> en #root dentro de <StrictMode>.
-    ├── index.css               # CSS del template original de Vite. Ver nota §8.1.
+    ├── index.css               # CSS del template original de Vite. Ver nota §10.1.
     │
     ├── App.jsx                 # Componente raíz. Solo lógica y presentación, sin datos.
     ├── App.css                 # Sistema de diseño Fiori completo. Variables en :root.
     │
+    ├── components/
+    │   ├── StocksTicker.jsx    # Ticker horizontal animado (10 acciones globales, header).
+    │   ├── StocksModal.jsx     # Modal de mercado local: tabla + sparkline, sin pestañas.
+    │   └── MiniChart.jsx       # Sparkline SVG 80×32px, verde/rojo según variación.
+    │
     ├── data/
-    │   └── countriesData.js    # Única fuente de verdad de todos los datos de monedas.
+    │   └── countriesData.js    # Fallback local: 27 monedas. Respaldo si Supabase falla.
     │
     ├── lib/
     │   └── supabase.js         # Cliente Supabase (createClient). Lee VITE_SUPABASE_URL y VITE_SUPABASE_ANON_KEY.
     │
     └── services/
-        ├── api.js              # Capa HTTP: fetch a frankfurter.app vía proxy (Vite en dev, Vercel en prod).
-        └── countriesService.js # Capa de acceso a Supabase: consulta tabla currencies con SELECT público.
+        ├── api.js              # Capa HTTP: fetch a frankfurter.app vía proxy; usa fallbackRates de Supabase.
+        ├── countriesService.js # Capa de acceso a Supabase: consulta tabla currencies con SELECT público.
+        └── stocksService.js    # Acceso a Twelve Data: /quote + /time_series. Caché en memoria Map (TTL 1h).
 ```
 
 ### Propósito detallado de cada archivo
@@ -70,7 +77,7 @@ Configura el proxy del servidor de desarrollo para redirigir `/api/frankfurter/*
 Configura los rewrites del edge de Vercel para producción. La regla `"/api/frankfurter/:path*"` → `"https://api.frankfurter.app/:path*"` replica lo que hace el proxy de Vite, pero ejecutándose en la infraestructura de Vercel (server-side). `api.js` usa la misma URL relativa en ambos entornos sin ningún cambio.
 
 **`src/data/countriesData.js`**
-Objeto `COUNTRY_DATA` con una entrada por moneda (27 en total). Cada entrada contiene: `country`, `flag`, `region`, `currency`, `symbol`, `fallbackRate`, `decimals` (solo si es 0), `centralBank`, `inflation`, `gdp`, `fact`. A partir de este objeto se derivan y exportan `CURRENCIES` (array para los selectores) y `FALLBACK_RATES` (objeto para el estado inicial de tasas). Es el único lugar donde viven datos — `App.jsx` no contiene ningún dato estático.
+Objeto `COUNTRY_DATA` con una entrada por moneda (27 en total). Actúa como **fallback local** si Supabase no responde: `getCountriesData()` en `countriesService.js` lo usa en el bloque `catch`. A partir de este objeto se derivan y exportan `CURRENCIES` (array para los selectores) y `FALLBACK_RATES` (objeto para el estado inicial de tasas). Las 30 monedas en producción provienen de Supabase; este archivo cubre las 27 originales.
 
 **`src/lib/supabase.js`**
 Inicializa y exporta el cliente de Supabase usando `createClient(VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY)`. Es el único lugar donde vive el cliente — el resto del código lo importa desde aquí. No contiene lógica de negocio.
@@ -79,7 +86,19 @@ Inicializa y exporta el cliente de Supabase usando `createClient(VITE_SUPABASE_U
 Capa de acceso a datos sobre Supabase. Expone funciones que consultan la tabla `currencies` mediante SELECT público (permitido por RLS con anon key). Actúa como adaptador entre el esquema de la base de datos y las estructuras que espera el resto de la app.
 
 **`src/services/api.js`**
-Función `fetchRates()` que hace `GET /api/frankfurter/latest?base=USD` (URL relativa → Vite proxy → API externa). Mezcla la respuesta con `STATIC_RATES` para las 6 monedas latinoamericanas no cubiertas por el BCE. Lanza un error si HTTP status ≠ 2xx, que el componente captura para mostrar el mensaje de estado.
+`fetchRates(fallbackRates = {})` hace `GET /api/frankfurter/latest?base=USD`. El merge es `{ USD: 1, ...fallbackRates, ...liveRates }`: los `fallback_rate` de Supabase cubren todo lo que el BCE no rastrea (ARS, CLP, COP, etc.); frankfurter sobrescribe donde tiene cobertura. `STATIC_RATES` fue eliminado — Supabase es ahora la única fuente de tasas estáticas.
+
+**`src/services/stocksService.js`**
+Gestiona acciones via Twelve Data (800 req/día). Para cada símbolo lanza en paralelo `/quote` (precio actual, `percent_change`, volumen, nombre) y `/time_series?interval=1day&outputsize=7` (7 cierres para el sparkline). Caché en `Map` con TTL de 1h; un TODO documenta la migración futura a tabla `stocks_cache` en Supabase. `GLOBAL_STOCKS` (10 acciones) alimenta el ticker; `LOCAL_STOCKS` (2 acciones por divisa) alimenta el modal.
+
+**`src/components/StocksTicker.jsx`**
+Carga `GLOBAL_STOCKS` con `fetchStockList` al montar. Duplica los items para el loop CSS infinito (`translateX(-50%)`). Si la carga falla, devuelve `null` (el ticker es decorativo). Sticky bajo el shell bar (`top: 44px`). Oculto en `≤540px`.
+
+**`src/components/StocksModal.jsx`**
+Modal de mercado local sin pestañas. Carga los 2 símbolos de `LOCAL_STOCKS[currencyCode]` (o `GLOBAL_STOCKS.slice(0,2)` como fallback) al abrir. Muestra tabla con empresa, precio, variación %, volumen y sparkline. Cierra con ✕, clic en backdrop o tecla Escape.
+
+**`src/components/MiniChart.jsx`**
+SVG puro 80×32px. Normaliza un array de 7 precios de cierre al viewport con padding de 3px. Trazo verde `#107E3E` si la acción sube, rojo `#BB0000` si baja.
 
 **`src/App.jsx`**
 Contiene tres componentes y la lógica de la aplicación:
@@ -145,16 +164,7 @@ Navegador → fetch('/api/frankfurter/latest?base=USD')
 
 ### Monedas no cubiertas por el BCE
 
-Las siguientes 6 monedas **no están en la respuesta de la API** (el BCE no las rastrea). Se mantienen con tasas estáticas en `api.js` como `STATIC_RATES`, que se mezclan antes de que la API pueda sobreescribirlas:
-
-| Código | Moneda | Tasa estática vs USD |
-|---|---|---|
-| ARS | Peso argentino | 1100.0 |
-| CLP | Peso chileno | 960.0 |
-| COP | Peso colombiano | 4300.0 |
-| PEN | Sol peruano | 3.75 |
-| UYU | Peso uruguayo | 42.0 |
-| BOB | Boliviano | 6.91 |
+Varias monedas no están en la respuesta de frankfurter.app. Antes se mantenían en un objeto `STATIC_RATES` hardcodeado en `api.js`. Actualmente **todas las tasas de respaldo viven en la columna `fallback_rate` de la tabla `currencies` en Supabase**, incluidas las latinoamericanas (ARS, CLP, COP, PEN, UYU, BOB) y las de África y Oceanía no cubiertas (NGN, EGP, KES, MAD, FJD). `STATIC_RATES` fue eliminado de `api.js`.
 
 ---
 
@@ -162,9 +172,9 @@ Las siguientes 6 monedas **no están en la respuesta de la API** (el BCE no las 
 
 ### 5.0 Base de datos
 
-La tabla `currencies` en Supabase contiene **22 registros** con los datos de las monedas principales. Columnas representativas: `code` (PK), `country`, `flag`, `region`, `currency_name`, `symbol`, `fallback_rate`, `decimals`, `central_bank`, `inflation`, `gdp`, `fact`.
+La tabla `currencies` en Supabase contiene **30 registros** (22 originales + 5 África + 3 Oceanía). Columnas: `code` (PK), `country`, `flag`, `continent`, `name`, `symbol`, `fallback_rate`, `decimals`, `central_bank`, `inflation`, `gdp`, `fun_fact`.
 
-Las 5 monedas restantes (hasta 27) aún se sirven exclusivamente desde `countriesData.js`.
+La columna `fallback_rate` es la **única fuente de tasas estáticas** del proyecto. `api.js` la recibe como parámetro `fallbackRates` y la aplica antes de las tasas en vivo de frankfurter. No hay tasas hardcodeadas en el frontend.
 
 ### 5.0.1 Row Level Security (RLS)
 
@@ -250,30 +260,31 @@ App.jsx
 ## 9. Estado detallado del proyecto
 
 ### Funcionalidad implementada
-- [x] Conversión entre 27 monedas (América, Europa, Asia)
+- [x] Conversión entre 30 monedas (América, Europa, Asia, África, Oceanía)
 - [x] Tasas reales desde frankfurter.app con actualización manual
-- [x] Tasas de fallback para las 6 monedas no cubiertas por BCE
+- [x] `fallback_rate` unificado en Supabase para todas las monedas no cubiertas por BCE
 - [x] Card informativa por moneda: país, banco central, inflación, PIB, dato curioso
+- [x] Botón "Ver mercado" en cada card → modal de mercado local
 - [x] Indicadores de estado: éxito (verde), error (rojo) al actualizar tasas
 - [x] Botón de intercambio con animación
 - [x] Diseño SAP Fiori completo con shell bar, paleta azul, responsive
-- [x] Datos centralizados en `countriesData.js` (sin datos en el componente)
 - [x] Historial de últimas 5 conversiones de la sesión (en memoria, no persistente)
 - [x] Deploy en producción: https://currency-converter-one-iota-39.vercel.app/
 - [x] Proxy en producción via `vercel.json` (resuelve CORS en Vercel)
-- [x] Integración con Supabase: tabla `currencies` con 22 registros reales
-- [x] Row Level Security: SELECT público (anon key), INSERT/UPDATE/DELETE bloqueados desde frontend
-- [x] Variables de entorno configuradas en `.env` (local) y en el dashboard de Vercel (producción)
-- [x] Arquitectura en capas: `src/lib/supabase.js` + `src/services/countriesService.js`
+- [x] Supabase: tabla `currencies` (30 registros), RLS activo, `fallback_rate` fuente única
+- [x] Variables de entorno: Supabase + Twelve Data en `.env` local y dashboard Vercel
+- [x] Arquitectura en capas: `supabase.js` → `countriesService.js` → `App.jsx`
+- [x] Ticker de acciones globales animado (10 símbolos, Twelve Data, sticky bajo shell bar)
+- [x] Modal de mercado local por divisa (2 acciones, sparkline 7 días, sin pestañas)
+- [x] Caché en memoria para acciones (TTL 1h, TODO documentado para migrar a Supabase)
 
 ### Limitaciones conocidas
-- Las tasas de las 6 monedas latinoamericanas (ARS, CLP, COP, PEN, UYU, BOB) son estáticas permanentemente — no hay API gratuita confiable que las cubra.
-- Los datos económicos de `countriesData.js` (inflación, PIB) son estáticos y aproximados a mayo 2026. No se actualizan automáticamente.
+- Los datos económicos de `countriesData.js` (inflación, PIB) son estáticos y aproximados a mayo 2026.
 - El historial de conversiones vive en memoria: se pierde al recargar la página.
-- `vercel.json` resuelve CORS solo para Vercel. Un deploy en otro host necesitaría configuración de proxy equivalente.
-- `index.css` contiene variables del template de Vite que no se usan pero no se eliminaron para evitar efectos secundarios no explorados.
-- Los assets `src/assets/hero.png`, `react.svg` y `vite.svg` son del template de Vite y no están en uso.
-- La tabla `currencies` en Supabase tiene 22 registros; las 5 monedas restantes hasta 27 aún no tienen fila en la BD (se sirven desde `countriesData.js`).
+- El caché de acciones es por sesión: dos usuarios distintos no comparten datos.
+- `vercel.json` resuelve CORS solo para Vercel.
+- `index.css` y `src/assets/` tienen remanentes del template Vite sin auditar.
+- `LOCAL_STOCKS` solo tiene listas para USD, EUR, GBP, JPY y CNY; el resto de divisas usa `GLOBAL_STOCKS.slice(0,2)` como fallback.
 
 ---
 
@@ -283,10 +294,13 @@ App.jsx
 Conversión en tiempo real, fallback, country cards, diseño Fiori, deploy Vercel con proxy CORS.
 
 ### Etapa 2 — Completada
-Integración con Supabase: tabla `currencies` (22 registros), RLS activo, arquitectura en capas (`supabase.js` + `countriesService.js`), variables de entorno en local y Vercel, app en producción conectada a BD real.
+Integración con Supabase: tabla `currencies` (30 registros), RLS activo, arquitectura en capas, `fallback_rate` unificado como única fuente de tasas estáticas, variables de entorno en local y Vercel.
 
-### Etapa 3 — Pendiente
-Backend propio: API server-side que use `service_role` para escribir en Supabase e implemente historial persistente de conversiones.
+### Etapa 3 — Completada (parcialmente)
+Datos de acciones vía Twelve Data: ticker animado en header, modal de mercado local por divisa, sparkline 7 días, caché en memoria. Pendiente: historial persistente y migración del caché de acciones a Supabase.
+
+### Etapa 4 — Pendiente
+Backend propio: API server-side con `service_role` para historial de conversiones y tabla `stocks_cache` compartida entre sesiones.
 
 ---
 
@@ -294,13 +308,14 @@ Backend propio: API server-side que use `service_role` para escribir en Supabase
 
 Estos pasos **no están comprometidos** — son candidatos naturales según la trayectoria del proyecto:
 
-1. **Backend propio con Supabase** — API server-side (Edge Function o servicio Node) que consulte frankfurter.app y almacene el historial de conversiones en Supabase. La `service_role` key se habilitará solo en ese contexto, nunca expuesta al frontend.
-2. **Persistencia del historial** — usar Supabase para guardar conversiones de forma persistente en lugar de memoria o `localStorage`.
-3. **Completar los 27 registros en Supabase** — las 5 monedas restantes aún no tienen fila en la tabla `currencies`; agregarlas para que la BD sea la única fuente de verdad.
-4. **Gráfico de tendencia** — consumir el endpoint histórico de frankfurter.app (`/YYYY-MM-DD..YYYY-MM-DD?from=USD&to=EUR`) para mostrar la evolución del par en los últimos 30 días.
-5. **Actualización automática** — polling cada N minutos usando `setInterval` en un `useEffect`, con indicador visual de "actualizando".
-6. **Modo oscuro** — aprovechar las variables `--f-*` ya definidas en `:root` para alternar paleta con una clase en `<body>` y `prefers-color-scheme`.
-7. **Limpieza de `index.css`** — auditar qué variables del template original siguen activas y eliminar las que no apliquen, consolidando toda la hoja de estilos en `App.css`.
+1. **Backend propio con Supabase** — API server-side (Edge Function o servicio Node) con `service_role` para historial de conversiones persistente y tabla `stocks_cache` compartida entre sesiones.
+2. **Migración del caché de acciones a Supabase** — tabla `stocks_cache` con TTL; reduce llamadas a Twelve Data cuando múltiples usuarios consultan los mismos símbolos (TODO ya documentado en `stocksService.js`).
+3. **Persistencia del historial** — guardar conversiones en Supabase en lugar de memoria.
+4. **Ampliar `LOCAL_STOCKS`** — agregar listas de acciones locales para más divisas (ZAR, AUD, INR, etc.) con 2 símbolos cada una.
+5. **Gráfico de tendencia de divisas** — consumir el endpoint histórico de frankfurter.app (`/YYYY-MM-DD..YYYY-MM-DD`) para mostrar la evolución del par en los últimos 30 días.
+6. **Actualización automática de tasas** — polling cada N minutos con `setInterval` en `useEffect`, con indicador visual.
+7. **Modo oscuro** — aprovechar las variables `--f-*` ya definidas para alternar paleta con `prefers-color-scheme`.
+8. **Limpieza de `index.css`** — auditar y consolidar en `App.css`.
 
 ---
 
