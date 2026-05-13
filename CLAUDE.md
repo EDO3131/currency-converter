@@ -7,7 +7,8 @@ tasas en tiempo real desde frankfurter.app, diseño SAP Fiori, sin librerías ad
 ## Stack
 
 - React 19.2.5 · Vite 8.0.10 · CSS puro · fetch nativo · Vercel (hosting)
-- **Restricción activa:** no instalar paquetes npm más allá de los existentes (`@supabase/supabase-js` aprobado)
+- **Supabase** (`@supabase/supabase-js`) — base de datos en producción con tabla `currencies` (22 registros)
+- **Restricción activa:** no instalar paquetes npm más allá de los existentes
 
 ## Estructura
 
@@ -17,10 +18,14 @@ src/
   App.css               # Sistema de diseño Fiori completo. Variables --f-* en :root.
   data/
     countriesData.js    # Única fuente de verdad: 27 monedas con todos sus datos.
+  lib/
+    supabase.js         # Cliente Supabase inicializado con VITE_SUPABASE_URL y VITE_SUPABASE_ANON_KEY.
   services/
     api.js              # fetch a frankfurter.app vía proxy (Vite en dev, Vercel en prod).
+    countriesService.js # Capa de acceso a Supabase: lee tabla currencies con SELECT público.
 docs/
   CONTEXT.md            # Contexto extendido del proyecto (decisiones, historial).
+.env                    # Variables de entorno locales (gitignored). Ver §Supabase.
 vite.config.js          # Proxy /api/frankfurter/* → https://api.frankfurter.app/* (solo dev)
 vercel.json             # Rewrite equivalente para producción en Vercel
 ```
@@ -30,6 +35,13 @@ vercel.json             # Rewrite equivalente para producción en Vercel
 **Datos:** todo dato estático vive en `src/data/countriesData.js`.
 `App.jsx` no debe contener arrays de monedas, tasas ni configuraciones.
 `CURRENCIES` y `FALLBACK_RATES` se derivan del mismo objeto `COUNTRY_DATA`.
+
+**Supabase / Seguridad:**
+- El cliente en `src/lib/supabase.js` usa solo la `anon key` (variable `VITE_SUPABASE_ANON_KEY`).
+- La tabla `currencies` tiene RLS activo: SELECT público permitido (anon key), INSERT/UPDATE/DELETE bloqueados desde el frontend.
+- La `service_role` key **nunca** va al frontend ni al repositorio — reservada para backend futuro.
+- Las variables de entorno locales viven en `.env` (gitignored); en producción se configuran en el dashboard de Vercel.
+- `countriesService.js` es la única capa autorizada para interactuar con Supabase; `App.jsx` no importa el cliente directamente.
 
 **API y proxy:** el fetch usa URL relativa `/api/frankfurter/...` —
 no cambiar a URL absoluta. En dev la resuelve `vite.config.js`; en prod, `vercel.json`.
@@ -48,7 +60,8 @@ distorsionaría los tamaños Fiori si se usaran unidades relativas.
 
 Implementado: conversión en tiempo real, fallback ante error de API,
 country cards con datos económicos, diseño Fiori responsive, shell bar,
-historial de últimas 5 conversiones (en memoria), deploy en Vercel con proxy CORS.
+historial de últimas 5 conversiones (en memoria), deploy en Vercel con proxy CORS,
+integración con Supabase (tabla `currencies`, 22 registros, RLS activo, conectado en producción).
 
 Deuda conocida: `index.css` y `src/assets/` tienen remanentes del template
 Vite que no se usan (no tocar sin auditar). El historial no persiste al recargar.
@@ -61,13 +74,13 @@ main ← develop ← feature/<nombre>
 ```
 
 Merges vía Pull Request. No push directo a `main`.
-`.claude/settings.local.json` excluido del repo (en `.gitignore`).
+`.claude/settings.local.json` y `.env` excluidos del repo (en `.gitignore`).
 
 ## Próxima etapa
 
-Backend propio + base de datos: API propia que consulte frankfurter.app
-server-side, almacene historial de conversiones de forma persistente y
-sirva los datos al frontend. Stack pendiente de definir.
+Backend propio: API server-side que consulte frankfurter.app y almacene historial
+de conversiones de forma persistente usando Supabase como BD. La `service_role`
+key (actualmente sin usar) se habilitará solo en ese contexto server-side.
 
 ## Convenciones
 

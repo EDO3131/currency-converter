@@ -1,7 +1,7 @@
 import { supabase } from '../lib/supabase'
 import LOCAL_COUNTRY_DATA, { CURRENCIES as LOCAL_CURRENCIES, FALLBACK_RATES as LOCAL_FALLBACK_RATES } from '../data/countriesData'
 
-const CONTINENT_ES = { America: 'América', Europe: 'Europa', Asia: 'Asia' }
+const CONTINENT_ES = { America: 'América', Europe: 'Europa', Asia: 'Asia', Africa: 'África', Oceania: 'Oceanía' }
 
 export async function getCountriesData() {
   try {
