@@ -3,6 +3,8 @@ import './App.css'
 import { fetchRates } from './services/api'
 import COUNTRY_DATA, { CURRENCIES, FALLBACK_RATES } from './data/countriesData'
 import { getCountriesData } from './services/countriesService'
+import StocksModal from './components/StocksModal'
+import StocksTicker from './components/StocksTicker'
 
 function convert(amount, from, to, rates) {
   return (amount / rates[from]) * rates[to]
@@ -75,7 +77,7 @@ function CurrencySelect({ value, onChange, label, currencies }) {
   )
 }
 
-function CountryCard({ code, countryData }) {
+function CountryCard({ code, countryData, onOpenMarket }) {
   const data = countryData[code]
   if (!data) return null
 
@@ -113,6 +115,12 @@ function CountryCard({ code, countryData }) {
       <div className="country-fact">
         <span className="country-fact-icon">💡</span>
         <span>{data.fact}</span>
+      </div>
+
+      <div className="country-card-actions">
+        <button className="btn-market" onClick={() => onOpenMarket(code)}>
+          Ver mercado
+        </button>
       </div>
     </div>
   )
@@ -162,9 +170,10 @@ export default function App() {
   const [error, setError]             = useState(null)
   const [lastUpdated, setLastUpdated] = useState(null)
   const [history, setHistory]         = useState([])
-  const [countryData, setCountryData]       = useState(COUNTRY_DATA)
-  const [currencies, setCurrencies]         = useState(CURRENCIES)
+  const [countryData, setCountryData]             = useState(COUNTRY_DATA)
+  const [currencies, setCurrencies]               = useState(CURRENCIES)
   const [supabaseFallbacks, setSupabaseFallbacks] = useState({})
+  const [stocksModal, setStocksModal]             = useState(null)
 
   function addToHistoryWith(amt, fromCode, toCode, res) {
     if (amt <= 0 || !isFinite(res)) return
@@ -239,6 +248,8 @@ export default function App() {
           <span className="shell-app-sub">América · Europa · Asia · África · Oceanía</span>
         </div>
       </nav>
+
+      <StocksTicker />
 
       <main className="page-content">
         <div className="converter-layout">
@@ -324,14 +335,23 @@ export default function App() {
           </article>
 
           <div className={`country-cards${from === to ? ' country-cards--single' : ''}`}>
-            <CountryCard code={from} countryData={countryData} />
-            {from !== to && <CountryCard code={to} countryData={countryData} />}
+            <CountryCard code={from} countryData={countryData} onOpenMarket={setStocksModal} />
+            {from !== to && <CountryCard code={to} countryData={countryData} onOpenMarket={setStocksModal} />}
           </div>
 
           <ConversionHistory history={history} countryData={countryData} />
 
         </div>
       </main>
+
+      {stocksModal && (
+        <StocksModal
+          currencyCode={stocksModal}
+          countryName={countryData[stocksModal]?.country ?? stocksModal}
+          flag={countryData[stocksModal]?.flag ?? ''}
+          onClose={() => setStocksModal(null)}
+        />
+      )}
     </div>
   )
 }
