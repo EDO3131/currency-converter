@@ -21,6 +21,8 @@ function CurrencySelect({ value, onChange, label, currencies }) {
   const americas = currencies.filter(c => c.region === 'América')
   const europe   = currencies.filter(c => c.region === 'Europa')
   const asia     = currencies.filter(c => c.region === 'Asia')
+  const africa   = currencies.filter(c => c.region === 'África')
+  const oceania  = currencies.filter(c => c.region === 'Oceanía')
 
   return (
     <div className="select-group">
@@ -47,6 +49,20 @@ function CurrencySelect({ value, onChange, label, currencies }) {
           </optgroup>
           <optgroup label="🌏 Asia">
             {asia.map(c => (
+              <option key={c.code} value={c.code}>
+                {c.flag} {c.code} — {c.name}
+              </option>
+            ))}
+          </optgroup>
+          <optgroup label="🌍 África">
+            {africa.map(c => (
+              <option key={c.code} value={c.code}>
+                {c.flag} {c.code} — {c.name}
+              </option>
+            ))}
+          </optgroup>
+          <optgroup label="🌏 Oceanía">
+            {oceania.map(c => (
               <option key={c.code} value={c.code}>
                 {c.flag} {c.code} — {c.name}
               </option>
@@ -146,15 +162,9 @@ export default function App() {
   const [error, setError]             = useState(null)
   const [lastUpdated, setLastUpdated] = useState(null)
   const [history, setHistory]         = useState([])
-  const [countryData, setCountryData] = useState(COUNTRY_DATA)
-  const [currencies, setCurrencies]   = useState(CURRENCIES)
-
-  useEffect(() => {
-    getCountriesData().then(({ countryData: cd, currencies: cur }) => {
-      setCountryData(cd)
-      setCurrencies(cur)
-    })
-  }, [])
+  const [countryData, setCountryData]       = useState(COUNTRY_DATA)
+  const [currencies, setCurrencies]         = useState(CURRENCIES)
+  const [supabaseFallbacks, setSupabaseFallbacks] = useState({})
 
   function addToHistoryWith(amt, fromCode, toCode, res) {
     if (amt <= 0 || !isFinite(res)) return
@@ -178,11 +188,11 @@ export default function App() {
     })
   }
 
-  async function loadRates() {
+  async function loadRates(fb = supabaseFallbacks) {
     setLoading(true)
     setError(null)
     try {
-      const data = await fetchRates()
+      const data = await fetchRates(fb)
       setRates(data)
       setLastUpdated(new Date())
     } catch (err) {
@@ -193,7 +203,14 @@ export default function App() {
     }
   }
 
-  useEffect(() => { loadRates() }, [])
+  useEffect(() => {
+    getCountriesData().then(({ countryData: cd, currencies: cur, fallbackRates: fb }) => {
+      setCountryData(cd)
+      setCurrencies(cur)
+      setSupabaseFallbacks(fb)
+      loadRates(fb)
+    })
+  }, [])
 
   const numericAmount = parseFloat(amount) || 0
   const result   = convert(numericAmount, from, to, rates)
@@ -219,7 +236,7 @@ export default function App() {
         </div>
         <div className="shell-titles">
           <span className="shell-app-name">Convertidor de Monedas</span>
-          <span className="shell-app-sub">América · Europa · Asia</span>
+          <span className="shell-app-sub">América · Europa · Asia · África · Oceanía</span>
         </div>
       </nav>
 

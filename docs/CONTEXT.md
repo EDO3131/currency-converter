@@ -1,7 +1,7 @@
 # Contexto del proyecto — Currency Converter
 
 > Documento de referencia para iniciar una sesión nueva de Claude Code.
-> Refleja el estado del proyecto al 10-05-2026.
+> Refleja el estado del proyecto al 12-05-2026.
 
 ---
 
@@ -23,8 +23,9 @@ La interfaz sigue el sistema de diseño **SAP Fiori**: paleta azul `#0070F2`, fo
 | HTTP | `fetch` nativo del navegador | — |
 | Empaquetador JSX | `@vitejs/plugin-react` (Babel) | 6.0.1 |
 | Linting | ESLint + plugins react-hooks / react-refresh | 10.x |
+| Base de datos | Supabase (PostgreSQL) | `@supabase/supabase-js` |
 
-**Sin librerías adicionales de UI, routing, estado global ni HTTP.** Restricción explícita del proyecto.
+**Sin librerías adicionales de UI, routing ni estado global.** Restricción explícita del proyecto.
 
 ---
 
@@ -36,7 +37,8 @@ currency-converter/
 ├── index.html                  # Punto de entrada HTML. Sin CSP, sin meta adicional.
 ├── vite.config.js              # Config de Vite + proxy de desarrollo para CORS.
 ├── vercel.json                 # Rewrite rules para proxy en producción (Vercel).
-├── package.json                # Dependencias. Solo react, react-dom y tooling de Vite.
+├── package.json                # Dependencias: react, react-dom, tooling Vite, @supabase/supabase-js.
+├── .env                        # Variables locales (gitignored): VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY.
 │
 ├── docs/
 │   └── CONTEXT.md              # Este archivo.
@@ -51,8 +53,12 @@ currency-converter/
     ├── data/
     │   └── countriesData.js    # Única fuente de verdad de todos los datos de monedas.
     │
+    ├── lib/
+    │   └── supabase.js         # Cliente Supabase (createClient). Lee VITE_SUPABASE_URL y VITE_SUPABASE_ANON_KEY.
+    │
     └── services/
-        └── api.js              # Capa HTTP: fetch a frankfurter.app vía proxy (Vite en dev, Vercel en prod).
+        ├── api.js              # Capa HTTP: fetch a frankfurter.app vía proxy (Vite en dev, Vercel en prod).
+        └── countriesService.js # Capa de acceso a Supabase: consulta tabla currencies con SELECT público.
 ```
 
 ### Propósito detallado de cada archivo
@@ -65,6 +71,12 @@ Configura los rewrites del edge de Vercel para producción. La regla `"/api/fran
 
 **`src/data/countriesData.js`**
 Objeto `COUNTRY_DATA` con una entrada por moneda (27 en total). Cada entrada contiene: `country`, `flag`, `region`, `currency`, `symbol`, `fallbackRate`, `decimals` (solo si es 0), `centralBank`, `inflation`, `gdp`, `fact`. A partir de este objeto se derivan y exportan `CURRENCIES` (array para los selectores) y `FALLBACK_RATES` (objeto para el estado inicial de tasas). Es el único lugar donde viven datos — `App.jsx` no contiene ningún dato estático.
+
+**`src/lib/supabase.js`**
+Inicializa y exporta el cliente de Supabase usando `createClient(VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY)`. Es el único lugar donde vive el cliente — el resto del código lo importa desde aquí. No contiene lógica de negocio.
+
+**`src/services/countriesService.js`**
+Capa de acceso a datos sobre Supabase. Expone funciones que consultan la tabla `currencies` mediante SELECT público (permitido por RLS con anon key). Actúa como adaptador entre el esquema de la base de datos y las estructuras que espera el resto de la app.
 
 **`src/services/api.js`**
 Función `fetchRates()` que hace `GET /api/frankfurter/latest?base=USD` (URL relativa → Vite proxy → API externa). Mezcla la respuesta con `STATIC_RATES` para las 6 monedas latinoamericanas no cubiertas por el BCE. Lanza un error si HTTP status ≠ 2xx, que el componente captura para mostrar el mensaje de estado.
@@ -146,53 +158,96 @@ Las siguientes 6 monedas **no están en la respuesta de la API** (el BCE no las 
 
 ---
 
-## 5. Decisiones técnicas y su razón
+## 5. Integración con Supabase
 
-### 5.1 Proxy de Vite en lugar de llamada directa a la API
+### 5.0 Base de datos
+
+La tabla `currencies` en Supabase contiene **22 registros** con los datos de las monedas principales. Columnas representativas: `code` (PK), `country`, `flag`, `region`, `currency_name`, `symbol`, `fallback_rate`, `decimals`, `central_bank`, `inflation`, `gdp`, `fact`.
+
+Las 5 monedas restantes (hasta 27) aún se sirven exclusivamente desde `countriesData.js`.
+
+### 5.0.1 Row Level Security (RLS)
+
+RLS está activo en la tabla `currencies`:
+
+| Operación | Rol | Resultado |
+|---|---|---|
+| SELECT | `anon` | Permitido (política pública) |
+| INSERT | `anon` | Bloqueado |
+| UPDATE | `anon` | Bloqueado |
+| DELETE | `anon` | Bloqueado |
+
+El frontend solo puede leer datos. Escrituras requieren `service_role`, que se reserva para un backend futuro.
+
+### 5.0.2 Variables de entorno
+
+| Variable | Alcance | Dónde se configura |
+|---|---|---|
+| `VITE_SUPABASE_URL` | Frontend (expuesta al navegador) | `.env` local · Dashboard Vercel |
+| `VITE_SUPABASE_ANON_KEY` | Frontend (expuesta al navegador) | `.env` local · Dashboard Vercel |
+
+La `service_role` key **no está configurada en ningún entorno activo** — se agrega cuando exista el backend.
+
+### 5.0.3 Arquitectura en capas
+
+```
+App.jsx
+  └── countriesService.js   ← única interfaz hacia Supabase
+        └── supabase.js     ← cliente (createClient)
+              └── Supabase  ← tabla currencies (PostgreSQL)
+```
+
+`App.jsx` nunca importa `supabase.js` directamente. Si la fuente de datos cambia, solo se toca `countriesService.js`.
+
+---
+
+## 6. Decisiones técnicas y su razón
+
+### 6.1 Proxy de Vite en lugar de llamada directa a la API
 
 **Decisión:** `fetch('/api/frankfurter/...')` con rewrite en `vite.config.js`.  
 **Razón:** El navegador bloquea `fetch()` cross-origin si el servidor no responde con `Access-Control-Allow-Origin`. Aunque frankfurter.app soporta CORS, infraestructura de red intermedia (proxies corporativos, antivirus) puede eliminar esas cabeceras. El proxy de Vite hace la petición desde Node.js (sin restricciones de CORS) y devuelve la respuesta al navegador como si fuera del mismo origen.  
 **Tradeoff:** El proxy de Vite solo actúa durante `npm run dev`. Para producción, cada host requiere su mecanismo equivalente. En Vercel se resuelve con `vercel.json` (§5.8); en otros hosts se necesitaría configuración específica de esa plataforma.
 
-### 5.2 `countriesData.js` como única fuente de verdad
+### 6.2 `countriesData.js` como única fuente de verdad
 
 **Decisión:** `CURRENCIES` y `FALLBACK_RATES` se derivan de `COUNTRY_DATA` con `Object.entries().map()` y `Object.fromEntries()`.  
 **Razón:** Antes existían tres objetos paralelos en `App.jsx` que compartían `flag`, `symbol` y nombre de moneda. Cualquier corrección requería editar en dos lugares. Ahora agregar una moneda nueva requiere tocar solo `countriesData.js`.
 
-### 5.3 `decimals` co-ubicado en `COUNTRY_DATA` en lugar de `LARGE_DECIMALS` separado
+### 6.3 `decimals` co-ubicado en `COUNTRY_DATA` en lugar de `LARGE_DECIMALS` separado
 
 **Decisión:** Las entradas de ARS, CLP, COP, HUF, JPY y KRW tienen `decimals: 0`. `formatResult()` lee `COUNTRY_DATA[code]?.decimals ?? 2`.  
 **Razón:** Un `Set` de códigos separado es una lista paralela que duplica conocimiento. Al poner `decimals: 0` en la misma entrada que describe la moneda, la regla y su justificación están en el mismo lugar.
 
-### 5.4 `FALLBACK_RATES` como estado inicial (no pantalla vacía)
+### 6.4 `FALLBACK_RATES` como estado inicial (no pantalla vacía)
 
 **Decisión:** `useState(FALLBACK_RATES)` como valor inicial de `rates`.  
 **Razón:** La app es funcional desde el primer render, antes de que la llamada a la API complete. El usuario ve un convertidor operativo con tasas aproximadas mientras se cargan las reales. Evita una pantalla en blanco o un estado de carga que bloquee la interacción.
 
-### 5.5 Manejo de error no destructivo
+### 6.5 Manejo de error no destructivo
 
 **Decisión:** El `catch` de `loadRates()` muestra un mensaje pero no limpia `rates`.  
 **Razón:** Si la API falla en un refresco manual, el usuario conserva las últimas tasas cargadas. La app nunca queda en estado roto.
 
-### 5.6 Sin librerías adicionales
+### 6.6 Sin librerías adicionales de UI/estado
 
 **Decisión:** `fetch` nativo, CSS puro, sin Axios, React Query, Tailwind, etc.  
 **Razón:** Restricción explícita del proyecto para mantener el footprint mínimo y usar solo lo nativo del navegador.
 
-### 5.8 `vercel.json` como proxy de producción
+### 6.7 `vercel.json` como proxy de producción
 
 **Decisión:** Rewrite declarativo `"/api/frankfurter/:path*"` → `"https://api.frankfurter.app/:path*"` en `vercel.json`.  
 **Razón:** Vercel ejecuta los rewrites en su edge network antes de que la respuesta llegue al navegador, por lo que no hay solicitud cross-origin. La solución es puramente declarativa (JSON), no requiere una función serverless, y permite que `api.js` use la misma URL relativa sin ningún cambio entre entornos.  
 **Tradeoff:** La configuración es específica de Vercel. Un deploy en Netlify, Nginx u otro host necesitaría un equivalente adaptado a esa plataforma.
 
-### 5.7 `CountryCard` retorna `null` para códigos sin datos
+### 6.8 `CountryCard` retorna `null` para códigos sin datos
 
 **Decisión:** `if (!data) return null` como primera línea de `CountryCard`.  
 **Razón:** Hace el componente tolerante a gaps en los datos sin requerir lógica defensiva en el padre. Si en el futuro se agrega una moneda nueva sin agregar su entrada en `countriesData.js`, la card simplemente no aparece — sin error de runtime.
 
 ---
 
-## 6. Estado actual del proyecto
+## 9. Estado detallado del proyecto
 
 ### Funcionalidad implementada
 - [x] Conversión entre 27 monedas (América, Europa, Asia)
@@ -206,6 +261,10 @@ Las siguientes 6 monedas **no están en la respuesta de la API** (el BCE no las 
 - [x] Historial de últimas 5 conversiones de la sesión (en memoria, no persistente)
 - [x] Deploy en producción: https://currency-converter-one-iota-39.vercel.app/
 - [x] Proxy en producción via `vercel.json` (resuelve CORS en Vercel)
+- [x] Integración con Supabase: tabla `currencies` con 22 registros reales
+- [x] Row Level Security: SELECT público (anon key), INSERT/UPDATE/DELETE bloqueados desde frontend
+- [x] Variables de entorno configuradas en `.env` (local) y en el dashboard de Vercel (producción)
+- [x] Arquitectura en capas: `src/lib/supabase.js` + `src/services/countriesService.js`
 
 ### Limitaciones conocidas
 - Las tasas de las 6 monedas latinoamericanas (ARS, CLP, COP, PEN, UYU, BOB) son estáticas permanentemente — no hay API gratuita confiable que las cubra.
@@ -214,39 +273,55 @@ Las siguientes 6 monedas **no están en la respuesta de la API** (el BCE no las 
 - `vercel.json` resuelve CORS solo para Vercel. Un deploy en otro host necesitaría configuración de proxy equivalente.
 - `index.css` contiene variables del template de Vite que no se usan pero no se eliminaron para evitar efectos secundarios no explorados.
 - Los assets `src/assets/hero.png`, `react.svg` y `vite.svg` son del template de Vite y no están en uso.
+- La tabla `currencies` en Supabase tiene 22 registros; las 5 monedas restantes hasta 27 aún no tienen fila en la BD (se sirven desde `countriesData.js`).
 
 ---
 
-## 7. Próximos pasos posibles
+## 7. Estado actual del proyecto
+
+### Etapa 1 — Completada
+Conversión en tiempo real, fallback, country cards, diseño Fiori, deploy Vercel con proxy CORS.
+
+### Etapa 2 — Completada
+Integración con Supabase: tabla `currencies` (22 registros), RLS activo, arquitectura en capas (`supabase.js` + `countriesService.js`), variables de entorno en local y Vercel, app en producción conectada a BD real.
+
+### Etapa 3 — Pendiente
+Backend propio: API server-side que use `service_role` para escribir en Supabase e implemente historial persistente de conversiones.
+
+---
+
+## 8. Próximos pasos posibles
 
 Estos pasos **no están comprometidos** — son candidatos naturales según la trayectoria del proyecto:
 
-1. **Persistencia del historial** — guardar las conversiones en `localStorage` para que sobrevivan recargas de página.
-2. **Gráfico de tendencia** — consumir el endpoint histórico de frankfurter.app (`/YYYY-MM-DD..YYYY-MM-DD?from=USD&to=EUR`) para mostrar la evolución del par en los últimos 30 días.
-3. **Actualización automática** — polling cada N minutos usando `setInterval` en un `useEffect`, con indicador visual de "actualizando".
-4. **Modo oscuro** — aprovechar las variables `--f-*` ya definidas en `:root` para alternar paleta con una clase en `<body>` y `prefers-color-scheme`.
-5. **Limpieza de `index.css`** — auditar qué variables del template original siguen activas y eliminar las que no apliquen, consolidando toda la hoja de estilos en `App.css`.
+1. **Backend propio con Supabase** — API server-side (Edge Function o servicio Node) que consulte frankfurter.app y almacene el historial de conversiones en Supabase. La `service_role` key se habilitará solo en ese contexto, nunca expuesta al frontend.
+2. **Persistencia del historial** — usar Supabase para guardar conversiones de forma persistente en lugar de memoria o `localStorage`.
+3. **Completar los 27 registros en Supabase** — las 5 monedas restantes aún no tienen fila en la tabla `currencies`; agregarlas para que la BD sea la única fuente de verdad.
+4. **Gráfico de tendencia** — consumir el endpoint histórico de frankfurter.app (`/YYYY-MM-DD..YYYY-MM-DD?from=USD&to=EUR`) para mostrar la evolución del par en los últimos 30 días.
+5. **Actualización automática** — polling cada N minutos usando `setInterval` en un `useEffect`, con indicador visual de "actualizando".
+6. **Modo oscuro** — aprovechar las variables `--f-*` ya definidas en `:root` para alternar paleta con una clase en `<body>` y `prefers-color-scheme`.
+7. **Limpieza de `index.css`** — auditar qué variables del template original siguen activas y eliminar las que no apliquen, consolidando toda la hoja de estilos en `App.css`.
 
 ---
 
-## 8. Convenciones de código
+## 10. Convenciones de código
 
-### 8.1 Nota sobre `index.css` vs `App.css`
+### 10.1 Nota sobre `index.css` vs `App.css`
 
 `index.css` (template de Vite) define `font-size: 18px` en `:root`, lo que afecta las unidades `rem` globales. `App.css` usa `body { font-size: 14px }` y valores `px` fijos en todos los componentes Fiori para evitar la herencia. No mezclar `rem` en estilos Fiori — usar `px` directamente.
 
-### 8.2 Datos
+### 10.2 Datos
 
 - Todo dato estático vive en `src/data/countriesData.js`. Cero datos en `App.jsx`.
 - Exports nombrados para arrays/objetos derivados (`CURRENCIES`, `FALLBACK_RATES`). Export default para el objeto primario (`COUNTRY_DATA`).
 - Constantes de módulo en `UPPER_SNAKE_CASE`.
 
-### 8.3 Componentes
+### 10.3 Componentes
 
 - Componentes auxiliares definidos en el mismo archivo que su consumidor mientras sean de uso único. Si un componente crece o se reutiliza, moverlo a `src/components/`.
 - `CountryCard` y `CurrencySelect` están actualmente en `App.jsx` por ser exclusivos de esa vista.
 
-### 8.4 Estilos CSS
+### 10.4 Estilos CSS
 
 - Variables de diseño Fiori con prefijo `--f-` en `:root` de `App.css`.
 - Nombres de clase en `kebab-case`. Elementos hijo con guión: `.country-card-header`, `.country-card-body`.
@@ -254,19 +329,19 @@ Estos pasos **no están comprometidos** — son candidatos naturales según la t
 - Secciones delimitadas con comentario: `/* ── Nombre ──────... */`.
 - El `@media (max-width: 540px)` va siempre al final del archivo.
 
-### 8.5 Lógica asíncrona
+### 10.5 Lógica asíncrona
 
 - Patrón fijo para llamadas a la API: `setLoading(true)` → `setError(null)` → `try/catch/finally` → `setLoading(false)` en `finally`.
 - El `catch` siempre hace `console.error('[contexto]', err)` antes de actualizar el estado de error, para facilitar el debugging.
 - El estado `rates` nunca se limpia en el `catch` — se preservan las últimas tasas válidas.
 
-### 8.6 Formateo de números
+### 10.6 Formateo de números
 
 `formatResult(value, code)` usa `Intl.NumberFormat` con locale `es-ES`. El número de decimales lo determina `COUNTRY_DATA[code]?.decimals ?? 2`: si la entrada tiene `decimals: 0`, se formatea sin centavos; si no tiene el campo, el default es 2.
 
 ---
 
-## 9. Flujo de trabajo Git
+## 11. Flujo de trabajo Git
 
 ### Modelo de ramas
 
