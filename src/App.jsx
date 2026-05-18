@@ -219,6 +219,9 @@ export default function App() {
       setSupabaseFallbacks(fb)
       loadRates(fb)
     })
+  // loadRates se redeclara en cada render; añadirla causaría un loop infinito.
+  // El efecto es intencional: ejecutar una sola vez al montar para cargar datos iniciales.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const numericAmount = parseFloat(amount) || 0
