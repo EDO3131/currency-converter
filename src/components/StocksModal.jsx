@@ -42,9 +42,11 @@ export default function StocksModal({ currencyCode, countryName, flag, onClose }
     const onKey = e => { if (e.key === 'Escape') onClose() }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
-  }, [])
+  }, [onClose])
 
   useEffect(() => {
+    // Limpia estado obsoleto de la moneda anterior antes de iniciar la nueva petición.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setData(null)
     setError(null)
     setLoading(true)
