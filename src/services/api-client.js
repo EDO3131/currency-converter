@@ -1,6 +1,4 @@
-const BASE_URL = import.meta.env.DEV
-  ? 'http://localhost:3001'
-  : 'https://currency-converter-api-production-74f8.up.railway.app'
+const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001'
 
 export function apiFetch(path, options) {
   const url = `${BASE_URL}${path}`
