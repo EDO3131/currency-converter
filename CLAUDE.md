@@ -2,13 +2,15 @@
 
 Convertidor de monedas React + Vite. 30 divisas (América / Europa / Asia / África / Oceanía),
 tasas en tiempo real desde frankfurter.app, diseño SAP Fiori, sin librerías adicionales.
-**Deploy activo:** https://currency-converter-one-iota-39.vercel.app/
+**Frontend:** https://currency-converter-one-iota-39.vercel.app/
+**Backend API:** https://currency-converter-api-gk8z.onrender.com
 
 ## Stack
 
-- React 19.2.5 · Vite 8.0.10 · CSS puro · fetch nativo · Vercel (hosting)
-- **Supabase** (`@supabase/supabase-js`) — BD en producción: tabla `currencies` (30 registros), `fallback_rate` unificado
-- **Twelve Data** — API de acciones (800 req/día). Key: `VITE_TWELVE_DATA_KEY`
+- React 19.2.5 · Vite 8.0.10 · CSS puro · fetch nativo · Vercel (hosting frontend)
+- **Backend propio** — Node.js/Express en Render. Intermediario único hacia todas las APIs externas.
+- **Supabase** — BD: tabla `currencies` (30 registros), accedida solo desde el backend.
+- **Twelve Data** — API de acciones (800 req/día), accedida solo desde el backend.
 - **Restricción activa:** no instalar paquetes npm más allá de los existentes
 
 ## Estructura
@@ -22,18 +24,19 @@ src/
     StocksModal.jsx     # Modal de mercado local: tabla de acciones con mini gráfico.
     MiniChart.jsx       # Sparkline SVG 80×32px para la variación de 7 días.
   data/
-    countriesData.js    # Fallback local: 27 monedas con sus datos (respaldo si Supabase falla).
+    countriesData.js    # Fallback local: 27 monedas con sus datos (respaldo si el backend falla).
   lib/
-    supabase.js         # Cliente Supabase inicializado con VITE_SUPABASE_URL y VITE_SUPABASE_ANON_KEY.
+    supabase.js         # Cliente Supabase (ya no se usa desde el frontend; conservado por si acaso).
   services/
-    api.js              # fetch a frankfurter.app vía proxy; acepta fallbackRates de Supabase.
-    countriesService.js # Capa de acceso a Supabase: lee tabla currencies con SELECT público.
-    stocksService.js    # Acceso a Twelve Data (quote + time_series). Caché en memoria Map.
+    api-client.js       # Capa HTTP base: apiFetch(path) → VITE_API_URL + path. Punto único de salida.
+    api.js              # fetchRates(): GET /api/rates?base=USD al backend.
+    countriesService.js # getCountriesData(): GET /api/currencies al backend; fallback a datos locales.
+    stocksService.js    # fetchStockList(): GET /api/stocks/global o /api/stocks/{code} al backend.
 docs/
   CONTEXT.md            # Contexto extendido del proyecto (decisiones, historial).
-.env                    # Variables locales (gitignored): SUPABASE_*, VITE_TWELVE_DATA_KEY.
-vite.config.js          # Proxy /api/frankfurter/* → https://api.frankfurter.app/* (solo dev)
-vercel.json             # Rewrite equivalente para producción en Vercel
+.env                    # Variables locales (gitignored): VITE_API_URL=http://localhost:3001
+vite.config.js          # Proxy heredado /api/frankfurter/* (ya no activo; frontend no llama a frankfurter)
+vercel.json             # Rewrite heredado /api/frankfurter/* (ya no activo)
 ```
 
 ## Reglas que no romper
@@ -42,22 +45,23 @@ vercel.json             # Rewrite equivalente para producción en Vercel
 `App.jsx` no debe contener arrays de monedas, tasas ni configuraciones.
 `CURRENCIES` y `FALLBACK_RATES` se derivan del mismo objeto `COUNTRY_DATA`.
 
-**Supabase / Seguridad:**
-- El cliente en `src/lib/supabase.js` usa solo la `anon key` (variable `VITE_SUPABASE_ANON_KEY`).
-- La tabla `currencies` tiene RLS activo: SELECT público permitido (anon key), INSERT/UPDATE/DELETE bloqueados desde el frontend.
-- La `service_role` key **nunca** va al frontend ni al repositorio — reservada para backend futuro.
-- Las variables de entorno locales viven en `.env` (gitignored); en producción se configuran en el dashboard de Vercel.
-- `countriesService.js` es la única capa autorizada para interactuar con Supabase; `App.jsx` no importa el cliente directamente.
+**Arquitectura frontend → backend:** el frontend **nunca** llama directamente a Supabase,
+frankfurter.app ni Twelve Data. Toda petición de datos sale por `apiFetch()` en `api-client.js`
+hacia el backend en Render (`VITE_API_URL`). La única excepción es el fallback local en
+`countriesService.js` cuando el backend no responde.
 
-**API y proxy (frankfurter):** el fetch usa URL relativa `/api/frankfurter/...` —
-no cambiar a URL absoluta. En dev la resuelve `vite.config.js`; en prod, `vercel.json`.
-`fetchRates(fallbackRates)` acepta los `fallback_rate` de Supabase como base estática;
-frankfurter los sobrescribe donde tenga cobertura. `STATIC_RATES` fue eliminado de `api.js`.
+**api-client.js:** punto único de salida HTTP del frontend. `apiFetch(path, options)` construye
+`VITE_API_URL + path` y llama a `fetch`. No añadir llamadas HTTP fuera de este módulo.
 
-**Stocks / Twelve Data:** `stocksService.js` llama directamente a `api.twelvedata.com` (CORS libre).
-Dos endpoints por símbolo en paralelo: `/quote` (precio, variación, volumen) y
-`/time_series` (7 cierres para el sparkline). Caché en memoria con TTL de 1 hora.
-La `service_role` key nunca va al frontend — el TODO en el caché documenta la migración futura a Supabase.
+**Variables de entorno (frontend):**
+- `VITE_API_URL` — URL base del backend. Local: `http://localhost:3001`; producción: configurada en dashboard Vercel.
+- Las claves de Supabase y Twelve Data ya no se necesitan en el frontend; viven solo en el backend (Render).
+
+**Seguridad:** ninguna API key ni credencial de servicio va al frontend ni al repositorio.
+El backend en Render es el único que conoce `SUPABASE_SERVICE_ROLE_KEY`, `TWELVE_DATA_KEY`, etc.
+
+**Stocks:** `stocksService.js` llama al backend (`/api/stocks/global`, `/api/stocks/{code}`),
+no a Twelve Data directamente. El backend gestiona caché, TTL y límites de la API.
 
 **Decimales:** `formatResult()` lee `COUNTRY_DATA[code]?.decimals ?? 2`.
 Las monedas sin centavos visibles (ARS, CLP, COP, HUF, JPY, KRW) tienen
@@ -69,15 +73,15 @@ distorsionaría los tamaños Fiori si se usaran unidades relativas.
 
 ## Estado actual
 
-Implementado: 30 divisas (5 regiones), conversión en tiempo real, fallback_rate unificado
-en Supabase para todas las monedas, country cards con datos económicos, diseño Fiori responsive,
-shell bar con ticker animado de 10 acciones globales (Twelve Data), modal de mercado local
-por país (sin pestañas, 2 acciones, sparkline 7 días), historial de últimas 5 conversiones
-(en memoria), deploy en Vercel con proxy CORS.
+Implementado: 30 divisas (5 regiones), conversión en tiempo real, country cards con datos
+económicos, diseño Fiori responsive, ticker animado de 10 acciones globales, modal de mercado
+local (2 acciones, sparkline 7 días), historial de 5 conversiones en memoria.
+**Backend propio desplegado en Render** — el frontend ya no llama a ninguna API externa
+directamente; toda la lógica de Supabase, frankfurter y Twelve Data vive en el backend.
 
 Deuda conocida: `index.css` y `src/assets/` tienen remanentes del template
 Vite que no se usan (no tocar sin auditar). El historial no persiste al recargar.
-El caché de acciones vive en memoria (TODO documentado para migrar a Supabase).
+`vite.config.js` y `vercel.json` conservan el proxy de frankfurter heredado (ya inactivo).
 
 ## Flujo de ramas
 
@@ -89,10 +93,11 @@ main ← develop ← feature/<nombre>
 Merges vía Pull Request. No push directo a `main`.
 `.claude/settings.local.json` y `.env` excluidos del repo (en `.gitignore`).
 
-## Próxima etapa
+## Próximas etapas posibles
 
-Backend propio: API server-side con `service_role` de Supabase para historial
-persistente de conversiones y migración del caché de acciones a tabla `stocks_cache`.
+- Historial de conversiones persistente (backend ya tiene acceso a Supabase con service_role).
+- Limpieza de `vite.config.js` y `vercel.json`: eliminar el proxy de frankfurter ya inactivo.
+- Ampliar `LOCAL_STOCKS` para más divisas (ZAR, AUD, INR, etc.).
 
 ## Convenciones
 
