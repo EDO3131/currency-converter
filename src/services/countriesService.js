@@ -1,12 +1,13 @@
-import { supabase } from '../lib/supabase'
+import { apiFetch } from './api-client'
 import LOCAL_COUNTRY_DATA, { CURRENCIES as LOCAL_CURRENCIES, FALLBACK_RATES as LOCAL_FALLBACK_RATES } from '../data/countriesData'
 
 const CONTINENT_ES = { America: 'América', Europe: 'Europa', Asia: 'Asia', Africa: 'África', Oceania: 'Oceanía' }
 
 export async function getCountriesData() {
   try {
-    const { data, error } = await supabase.from('currencies').select('*')
-    if (error) throw error
+    const res = await apiFetch('/api/currencies')
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    const data = await res.json()
 
     const countryData = {}
     for (const row of data) {
@@ -37,7 +38,7 @@ export async function getCountriesData() {
       Object.entries(countryData).map(([code, d]) => [code, d.fallbackRate])
     )
 
-    console.log('[countriesService] Datos cargados desde Supabase:', data.length, 'monedas')
+    console.log('[countriesService] Datos cargados desde backend:', data.length, 'monedas')
     return { countryData, currencies, fallbackRates }
   } catch (err) {
     console.warn('[countriesService] Fallback a datos locales. Error:', err.message)
