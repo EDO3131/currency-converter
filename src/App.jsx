@@ -1,10 +1,14 @@
 import { useState, useEffect } from 'react'
 import './App.css'
 import { fetchRates } from './services/api'
+import { getHistory, saveConversion } from './services/historyService'
 import COUNTRY_DATA, { CURRENCIES, FALLBACK_RATES } from './data/countriesData'
 import { getCountriesData } from './services/countriesService'
 import StocksModal from './components/StocksModal'
 import StocksTicker from './components/StocksTicker'
+import AuthModal from './components/AuthModal'
+import UserMenu from './components/UserMenu'
+import { AuthProvider, useAuth } from './context/AuthContext'
 
 function convert(amount, from, to, rates) {
   return (amount / rates[from]) * rates[to]
@@ -17,6 +21,23 @@ function formatResult(value, code, countryData) {
     minimumFractionDigits: decimals,
     maximumFractionDigits: decimals,
   }).format(value)
+}
+
+function normalizeHistoryEntry(item, currencies) {
+  const fromData = currencies.find(c => c.code === item.from_code)
+  const toData   = currencies.find(c => c.code === item.to_code)
+  return {
+    id:         item.id,
+    amount:     Number(item.amount),
+    from:       item.from_code,
+    to:         item.to_code,
+    result:     Number(item.result),
+    fromFlag:   fromData?.flag   ?? '',
+    toFlag:     toData?.flag     ?? '',
+    fromSymbol: fromData?.symbol ?? item.from_code,
+    toSymbol:   toData?.symbol   ?? item.to_code,
+    time:       new Date(item.created_at),
+  }
 }
 
 function CurrencySelect({ value, onChange, label, currencies }) {
@@ -37,37 +58,27 @@ function CurrencySelect({ value, onChange, label, currencies }) {
         >
           <optgroup label="🌎 América">
             {americas.map(c => (
-              <option key={c.code} value={c.code}>
-                {c.flag} {c.code} — {c.name}
-              </option>
+              <option key={c.code} value={c.code}>{c.flag} {c.code} — {c.name}</option>
             ))}
           </optgroup>
           <optgroup label="🌍 Europa">
             {europe.map(c => (
-              <option key={c.code} value={c.code}>
-                {c.flag} {c.code} — {c.name}
-              </option>
+              <option key={c.code} value={c.code}>{c.flag} {c.code} — {c.name}</option>
             ))}
           </optgroup>
           <optgroup label="🌏 Asia">
             {asia.map(c => (
-              <option key={c.code} value={c.code}>
-                {c.flag} {c.code} — {c.name}
-              </option>
+              <option key={c.code} value={c.code}>{c.flag} {c.code} — {c.name}</option>
             ))}
           </optgroup>
           <optgroup label="🌍 África">
             {africa.map(c => (
-              <option key={c.code} value={c.code}>
-                {c.flag} {c.code} — {c.name}
-              </option>
+              <option key={c.code} value={c.code}>{c.flag} {c.code} — {c.name}</option>
             ))}
           </optgroup>
           <optgroup label="🌏 Oceanía">
             {oceania.map(c => (
-              <option key={c.code} value={c.code}>
-                {c.flag} {c.code} — {c.name}
-              </option>
+              <option key={c.code} value={c.code}>{c.flag} {c.code} — {c.name}</option>
             ))}
           </optgroup>
         </select>
@@ -126,11 +137,12 @@ function CountryCard({ code, countryData, onOpenMarket }) {
   )
 }
 
-function ConversionHistory({ history, countryData }) {
+function ConversionHistory({ history, countryData, persisted }) {
   return (
     <div className="history-card">
       <div className="history-header">
         <span className="history-title">Historial de conversiones</span>
+        {persisted && <span className="history-badge">guardado</span>}
       </div>
       {history.length === 0 ? (
         <p className="history-empty">Sin conversiones recientes</p>
@@ -160,7 +172,9 @@ function ConversionHistory({ history, countryData }) {
   )
 }
 
-export default function App() {
+function AppContent() {
+  const { user, token } = useAuth()
+
   const [amount, setAmount]           = useState('1')
   const [from, setFrom]               = useState('USD')
   const [to, setTo]                   = useState('EUR')
@@ -174,6 +188,7 @@ export default function App() {
   const [currencies, setCurrencies]               = useState(CURRENCIES)
   const [supabaseFallbacks, setSupabaseFallbacks] = useState({})
   const [stocksModal, setStocksModal]             = useState(null)
+  const [authModal, setAuthModal]                 = useState(false)
 
   function addToHistoryWith(amt, fromCode, toCode, res) {
     if (amt <= 0 || !isFinite(res)) return
@@ -183,18 +198,23 @@ export default function App() {
       const fromData = currencies.find(c => c.code === fromCode)
       const toData   = currencies.find(c => c.code === toCode)
       return [{
-        id: Date.now(),
-        amount: amt,
-        from: fromCode,
-        to: toCode,
-        result: res,
-        fromFlag: fromData?.flag ?? '',
-        toFlag: toData?.flag ?? '',
+        id:         Date.now(),
+        amount:     amt,
+        from:       fromCode,
+        to:         toCode,
+        result:     res,
+        fromFlag:   fromData?.flag   ?? '',
+        toFlag:     toData?.flag     ?? '',
         fromSymbol: fromData?.symbol ?? fromCode,
-        toSymbol: toData?.symbol ?? toCode,
-        time: new Date(),
+        toSymbol:   toData?.symbol   ?? toCode,
+        time:       new Date(),
       }, ...prev].slice(0, 5)
     })
+    if (user && token) {
+      const rate = rates[fromCode] ? rates[toCode] / rates[fromCode] : 0
+      saveConversion(token, { from_code: fromCode, to_code: toCode, amount: amt, result: res, rate })
+        .catch(err => console.warn('[history] save failed', err))
+    }
   }
 
   async function loadRates(fb = supabaseFallbacks) {
@@ -220,9 +240,25 @@ export default function App() {
       loadRates(fb)
     })
   // loadRates se redeclara en cada render; añadirla causaría un loop infinito.
-  // El efecto es intencional: ejecutar una sola vez al montar para cargar datos iniciales.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // Sincroniza el historial con el backend cuando el usuario inicia o cierra sesión.
+  useEffect(() => {
+    let active = true
+    if (!user || !token) {
+      Promise.resolve().then(() => { if (active) setHistory([]) })
+      return () => { active = false }
+    }
+    getHistory(token)
+      .then(items => {
+        if (active) setHistory(items.slice(0, 5).map(item => normalizeHistoryEntry(item, currencies)))
+      })
+      .catch(err => console.warn('[history] load failed', err))
+    return () => { active = false }
+  // currencies no se incluye para evitar re-cargas al actualizar datos de países.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, token])
 
   const numericAmount = parseFloat(amount) || 0
   const result   = convert(numericAmount, from, to, rates)
@@ -250,6 +286,9 @@ export default function App() {
           <span className="shell-app-name">Convertidor de Monedas</span>
           <span className="shell-app-sub">América · Europa · Asia · África · Oceanía</span>
         </div>
+        <div className="shell-actions">
+          <UserMenu onLoginClick={() => setAuthModal(true)} />
+        </div>
       </nav>
 
       <StocksTicker />
@@ -276,7 +315,12 @@ export default function App() {
               </div>
 
               <div className="pair-row">
-                <CurrencySelect value={from} onChange={v => { addToHistoryWith(numericAmount, v, to, convert(numericAmount, v, to, rates)); setFrom(v) }} label="Moneda origen" currencies={currencies} />
+                <CurrencySelect
+                  value={from}
+                  onChange={v => { addToHistoryWith(numericAmount, v, to, convert(numericAmount, v, to, rates)); setFrom(v) }}
+                  label="Moneda origen"
+                  currencies={currencies}
+                />
                 <button
                   className={`swap-btn${rotating ? ' rotating' : ''}`}
                   onClick={handleSwap}
@@ -284,7 +328,12 @@ export default function App() {
                 >
                   ⇄
                 </button>
-                <CurrencySelect value={to} onChange={v => { addToHistoryWith(numericAmount, from, v, convert(numericAmount, from, v, rates)); setTo(v) }} label="Moneda destino" currencies={currencies} />
+                <CurrencySelect
+                  value={to}
+                  onChange={v => { addToHistoryWith(numericAmount, from, v, convert(numericAmount, from, v, rates)); setTo(v) }}
+                  label="Moneda destino"
+                  currencies={currencies}
+                />
               </div>
 
               <div className="result-card">
@@ -342,7 +391,7 @@ export default function App() {
             {from !== to && <CountryCard code={to} countryData={countryData} onOpenMarket={setStocksModal} />}
           </div>
 
-          <ConversionHistory history={history} countryData={countryData} />
+          <ConversionHistory history={history} countryData={countryData} persisted={!!user} />
 
         </div>
       </main>
@@ -355,6 +404,17 @@ export default function App() {
           onClose={() => setStocksModal(null)}
         />
       )}
+
+      {authModal && <AuthModal onClose={() => setAuthModal(false)} />}
+
     </div>
+  )
+}
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <AppContent />
+    </AuthProvider>
   )
 }
