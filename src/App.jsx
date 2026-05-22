@@ -212,8 +212,10 @@ function AppContent() {
     })
     if (user && token) {
       const rate = rates[fromCode] ? rates[toCode] / rates[fromCode] : 0
+      console.log('[history] intentando guardar:', { from_code: fromCode, to_code: toCode, amount: amt, result: res, rate })
+      console.log('[history] token disponible:', token ? token.slice(0, 20) + '...' : 'AUSENTE')
       saveConversion(token, { from_code: fromCode, to_code: toCode, amount: amt, result: res, rate })
-        .catch(err => console.warn('[history] save failed', err))
+        .catch(err => console.error('[history] save FAILED:', err.message, err))
     }
   }
 
