@@ -15,26 +15,33 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    // Diagnóstico: loguea todos los parámetros de la URL al cargar.
-    // Útil para detectar si el backend devuelve el token con un nombre distinto.
-    const params = new URLSearchParams(window.location.search)
-    console.log('[auth] URL al cargar:', window.location.search)
-    console.log('[auth] Parámetros:', Object.fromEntries(params.entries()))
-
+    // Query params (?token=...) — flujo legacy / backend propio
+    const params          = new URLSearchParams(window.location.search)
     const urlToken        = params.get('token')
     const urlRefreshToken = params.get('refresh_token')
+    console.log('[auth] URL al cargar:', window.location.search)
     console.log('[auth] ?token=', urlToken ?? '(ausente)')
-    console.log('[auth] ?refresh_token=', urlRefreshToken ?? '(ausente)')
 
-    if (urlToken) {
+    // Hash fragment (#access_token=...) — flujo Supabase OAuth
+    console.log('[auth] hash:', window.location.hash.slice(0, 50))
+    const hashParams  = new URLSearchParams(window.location.hash.slice(1))
+    const hashToken   = hashParams.get('access_token')
+    const hashRefresh = hashParams.get('refresh_token')
+    console.log('[auth] #access_token=', hashToken ?? '(ausente)')
+
+    // Prioridad: hash (Supabase OAuth) > query param (backend propio)
+    const resolvedToken   = hashToken   ?? urlToken
+    const resolvedRefresh = hashRefresh ?? urlRefreshToken
+
+    if (resolvedToken) {
       window.history.replaceState({}, '', window.location.pathname)
-      localStorage.setItem('auth_token', urlToken)
-      if (urlRefreshToken) {
-        localStorage.setItem('auth_refresh_token', urlRefreshToken)
+      localStorage.setItem('auth_token', resolvedToken)
+      if (resolvedRefresh) {
+        localStorage.setItem('auth_refresh_token', resolvedRefresh)
       }
     }
 
-    const stored = urlToken || localStorage.getItem('auth_token')
+    const stored = resolvedToken || localStorage.getItem('auth_token')
     console.log('[auth] Token a verificar:', stored ? stored.slice(0, 20) + '…' : '(ninguno)')
 
     if (!stored) {
