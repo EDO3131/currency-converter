@@ -243,7 +243,8 @@ function AppContent() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Sincroniza el historial con el backend cuando el usuario inicia o cierra sesión.
+  // Sincroniza el historial con el backend cuando el usuario inicia/cierra sesión
+  // o cuando currencies se actualiza del fallback local al dato real del backend.
   useEffect(() => {
     let active = true
     if (!user || !token) {
@@ -256,9 +257,7 @@ function AppContent() {
       })
       .catch(err => console.warn('[history] load failed', err))
     return () => { active = false }
-  // currencies no se incluye para evitar re-cargas al actualizar datos de países.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user, token])
+  }, [user, token, currencies])
 
   const numericAmount = parseFloat(amount) || 0
   const result   = convert(numericAmount, from, to, rates)
