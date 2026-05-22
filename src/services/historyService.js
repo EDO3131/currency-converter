@@ -7,7 +7,9 @@ function bearer(token) {
 export async function getHistory(token) {
   const res = await apiFetch('/api/history', { headers: bearer(token) })
   if (!res.ok) throw new Error(`HTTP ${res.status}`)
-  return res.json()
+  const data = await res.json()
+  console.log('[history] raw response:', data)
+  return data
 }
 
 export async function saveConversion(token, { from_code, to_code, amount, result, rate }) {
