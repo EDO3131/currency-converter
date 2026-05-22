@@ -9,7 +9,7 @@ export async function login(email, password) {
   const data = await res.json().catch(() => ({}))
   console.log('[auth/login] status:', res.status, 'body:', data)
   if (!res.ok) throw new Error(data.message ?? `HTTP ${res.status}`)
-  return { token: data.token, user: data.user ?? data }
+  return { token: data.session?.access_token ?? data.token, user: data.user }
 }
 
 export async function register(email, password) {
@@ -21,7 +21,7 @@ export async function register(email, password) {
   const data = await res.json().catch(() => ({}))
   console.log('[auth/register] status:', res.status, 'body:', data)
   if (!res.ok) throw new Error(data.message ?? `HTTP ${res.status}`)
-  return { token: data.token, user: data.user ?? data }
+  return { token: data.session?.access_token ?? data.token, user: data.user }
 }
 
 export async function logoutApi(token) {
