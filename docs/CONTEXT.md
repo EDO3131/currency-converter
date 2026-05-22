@@ -1,7 +1,7 @@
 # Contexto del proyecto — Currency Converter
 
 > Documento de referencia para iniciar una sesión nueva de Claude Code.
-> Refleja el estado del proyecto al 20-05-2026.
+> Refleja el estado del proyecto al 22-05-2026.
 
 ---
 
@@ -21,7 +21,8 @@ La interfaz sigue el sistema de diseño **SAP Fiori**: paleta azul `#0070F2`, fo
 | Estilos | CSS puro con custom properties | Variables `--f-*` en `:root` |
 | HTTP (frontend) | `fetch` nativo · `api-client.js` | Toda llamada sale por `apiFetch()` |
 | Backend | Node.js/Express en Render | https://currency-converter-api-gk8z.onrender.com |
-| Base de datos | Supabase (PostgreSQL) | Accedida solo desde el backend |
+| Base de datos | Supabase (PostgreSQL) | Tablas `currencies` y `conversion_history`; accedida solo desde el backend |
+| Autenticación | Supabase Auth | Email/password + Google OAuth; gestionada vía backend |
 | Tasas de cambio | frankfurter.app | Consultada solo desde el backend |
 | API de acciones | Twelve Data (800 req/día) | Consultada solo desde el backend |
 | Empaquetador JSX | `@vitejs/plugin-react` (Babel) 6.0.1 | — |
@@ -52,7 +53,12 @@ currency-converter/
     ├── App.jsx                 # Componente raíz. Solo lógica y presentación, sin datos.
     ├── App.css                 # Sistema de diseño Fiori completo. Variables en :root.
     │
+    ├── context/
+    │   └── AuthContext.jsx     # AuthProvider + useAuth(). Estado: user, token, loading. login/register/logout/Google.
+    │
     ├── components/
+    │   ├── AuthModal.jsx       # Modal login/registro: email+contraseña y Google OAuth. Tabs login/registro.
+    │   ├── UserMenu.jsx        # Shell bar: botón "Iniciar sesión" o avatar con dropdown (cerrar sesión).
     │   ├── StocksTicker.jsx    # Ticker horizontal animado (10 acciones globales, header).
     │   ├── StocksModal.jsx     # Modal de mercado local: tabla + sparkline, sin pestañas.
     │   └── MiniChart.jsx       # Sparkline SVG 80×32px, verde/rojo según variación.
@@ -66,6 +72,8 @@ currency-converter/
     └── services/
         ├── api-client.js       # Capa HTTP base. apiFetch(path) → VITE_API_URL + path. Punto único de salida.
         ├── api.js              # fetchRates(): GET /api/rates?base=USD al backend.
+        ├── authService.js      # login(), register(), logoutApi(), getMe(), loginWithGoogle(). Llama al backend.
+        ├── historyService.js   # getHistory(), saveConversion(), deleteConversion(). Bearer token requerido.
         ├── countriesService.js # getCountriesData(): GET /api/currencies al backend; fallback local.
         └── stocksService.js    # fetchStockList(): GET /api/stocks/global o /api/stocks/{code} al backend.
 ```
@@ -87,6 +95,21 @@ Objeto `COUNTRY_DATA` con una entrada por moneda (27 en total). Actúa como **fa
 **`src/lib/supabase.js`**
 Cliente Supabase inicializado con `VITE_SUPABASE_URL` y `VITE_SUPABASE_ANON_KEY`. Ya no se usa desde el frontend tras la migración al backend propio. Se conserva por si se necesita en el futuro; ningún servicio lo importa actualmente.
 
+**`src/context/AuthContext.jsx`**
+`AuthProvider` envuelve `<AppContent>`. Expone `{ user, token, loading, login, register, loginWithGoogle, logout }` mediante `useAuth()`. Al montar, lee el token desde el hash de la URL (`#access_token=...` — flujo Supabase OAuth) o desde `localStorage` (`auth_token`); lo valida con `GET /api/auth/me`. Si el token es inválido o expirado, lo elimina silenciosamente. El único consumidor externo de `authService.js` — el resto de la app usa `useAuth()`.
+
+**`src/components/AuthModal.jsx`**
+Modal con dos pestañas (Iniciar sesión / Registrarse). Formulario email + contraseña con confirmación en registro. Botón "Continuar con Google" (solo en login) que redirige a `GET /api/auth/google` en el backend. Errores de Supabase Auth se traducen a mensajes en español mediante `ERROR_MAP`.
+
+**`src/components/UserMenu.jsx`**
+En la shell bar: muestra "Iniciar sesión" si no hay sesión; muestra el avatar con inicial del email y un dropdown (cerrar sesión) si hay sesión activa.
+
+**`src/services/authService.js`**
+`login(email, password)` → `POST /api/auth/login`. `register(email, password)` → `POST /api/auth/register`. `logoutApi(token)` → `POST /api/auth/logout`. `getMe(token)` → `GET /api/auth/me`. `loginWithGoogle()` → redirige a `GET /api/auth/google` (redirect a Google via Supabase Auth).
+
+**`src/services/historyService.js`**
+`getHistory(token)` → `GET /api/history` con Bearer token. `saveConversion(token, {...})` → `POST /api/history`. `deleteConversion(token, id)` → `DELETE /api/history/:id`. Todos los métodos requieren token válido; se llaman solo cuando `user && token` están presentes en `AuthContext`.
+
 **`src/services/countriesService.js`**
 `getCountriesData()` hace `GET /api/currencies` al backend mediante `apiFetch`. Mapea la respuesta al esquema interno (`countryData`, `currencies`, `fallbackRates`). En el `catch` devuelve los datos locales de `countriesData.js`.
 
@@ -106,11 +129,12 @@ Modal de mercado local sin pestañas. Carga los 2 símbolos de `LOCAL_STOCKS[cur
 SVG puro 80×32px. Normaliza un array de 7 precios de cierre al viewport con padding de 3px. Trazo verde `#107E3E` si la acción sube, rojo `#BB0000` si baja.
 
 **`src/App.jsx`**
-Contiene tres componentes y la lógica de la aplicación:
-- `CurrencySelect` — selector con optgroups por región (América / Europa / Asia).
+Contiene cuatro componentes y la lógica de la aplicación:
+- `CurrencySelect` — selector con optgroups por región (América / Europa / Asia / África / Oceanía).
 - `CountryCard` — card informativa con datos económicos del país. Retorna `null` si el código no tiene entrada en `COUNTRY_DATA`.
-- `ConversionHistory` — lista las últimas 5 conversiones de la sesión. Muestra "Sin conversiones recientes" cuando el array está vacío.
-- `App` — componente principal con estado (`amount`, `from`, `to`, `rotating`, `rates`, `loading`, `error`, `lastUpdated`, `history`), funciones `loadRates()` y `addToHistoryWith()`, y el árbol JSX completo.
+- `ConversionHistory` — lista las últimas 5 conversiones. Muestra badge "guardado" cuando el usuario está autenticado. Muestra "Sin conversiones recientes" cuando el array está vacío.
+- `AppContent` — lógica principal: estado (`amount`, `from`, `to`, `rates`, `history`, `authModal`, …), `loadRates()`, `addToHistoryWith()`. Consume `useAuth()` para saber si guardar en backend.
+- `App` — wrapper raíz que solo aplica `<AuthProvider>` sobre `<AppContent>`.
 
 **`src/App.css`**
 Diseño Fiori implementado con CSS puro. Variables de diseño en `:root` con prefijo `--f-`. Cubre: shell bar, layout de página, card del convertidor, inputs/selects Fiori, botones primario/secundario, panel de resultado, mensajes de estado semántico, grid de country cards, responsive para ≤ 540px.
@@ -172,15 +196,15 @@ Las claves de Supabase y Twelve Data **no se necesitan en el frontend** — vive
 
 ### 5.0 Base de datos
 
-La tabla `currencies` en Supabase contiene **30 registros** (22 originales + 5 África + 3 Oceanía). Columnas: `code` (PK), `country`, `flag`, `continent`, `name`, `symbol`, `fallback_rate`, `decimals`, `central_bank`, `inflation`, `gdp`, `fun_fact`.
+**Tabla `currencies`** — 30 registros (22 originales + 5 África + 3 Oceanía). Columnas: `code` (PK), `country`, `flag`, `continent`, `name`, `symbol`, `fallback_rate`, `decimals`, `central_bank`, `inflation`, `gdp`, `fun_fact`. RLS activo (solo lectura).
+
+**Tabla `conversion_history`** — Columnas: `id` (PK), `user_id` (FK → Supabase Auth users), `from_code`, `to_code`, `amount`, `result`, `rate`, `created_at`. **RLS deshabilitado** — la seguridad se aplica en el backend validando el Bearer token antes de cada operación.
 
 La columna `fallback_rate` es la **única fuente de tasas estáticas** del proyecto. El backend la expone en `GET /api/rates` junto con las tasas en vivo de frankfurter. No hay tasas hardcodeadas en el frontend.
 
 ### 5.0.1 Acceso desde el backend
 
-El backend en Render accede a Supabase con la `service_role` key, lo que le permite operaciones de lectura y escritura sin restricciones de RLS. Esto habilita, en el futuro, guardar historial de conversiones y una tabla `stocks_cache` compartida.
-
-El frontend ya **no** tiene variables de entorno de Supabase — `src/lib/supabase.js` existe pero no se importa en ningún servicio activo.
+El backend en Render accede a Supabase con la `service_role` key para operaciones de BD y con el JWT del usuario para las operaciones de `conversion_history`. El frontend ya **no** tiene variables de entorno de Supabase — `src/lib/supabase.js` existe pero no se importa en ningún servicio activo.
 
 ### 5.0.2 Variables de entorno (backend en Render)
 
@@ -194,13 +218,43 @@ El frontend ya **no** tiene variables de entorno de Supabase — `src/lib/supaba
 
 ```
 App.jsx
-  └── countriesService.js   ← llama a apiFetch('/api/currencies')
+  └── countriesService.js   ← apiFetch('/api/currencies')
+  └── historyService.js     ← apiFetch('/api/history', Bearer token)
         └── api-client.js   ← fetch(VITE_API_URL + path)
               └── Backend (Render)
-                    └── Supabase tabla currencies (service_role)
+                    ├── Supabase tabla currencies (service_role)
+                    └── Supabase tabla conversion_history (valida JWT usuario)
 ```
 
-El frontend no toca Supabase directamente. Si la fuente de datos cambia, solo se toca el backend y `countriesService.js`.
+El frontend no toca Supabase directamente. Si la fuente de datos cambia, solo se toca el backend y el servicio correspondiente.
+
+### 5.1 Autenticación (Supabase Auth vía backend)
+
+El backend expone los endpoints de auth; el frontend nunca llama a Supabase Auth directamente.
+
+| Endpoint | Descripción |
+|---|---|
+| `POST /api/auth/register` | Registra usuario con email+contraseña en Supabase Auth |
+| `POST /api/auth/login` | Login email+contraseña; devuelve `session.access_token` y `user` |
+| `POST /api/auth/logout` | Invalida la sesión en Supabase |
+| `GET /api/auth/me` | Valida Bearer token y devuelve el usuario |
+| `GET /api/auth/google` | Inicia el flujo OAuth con Google via Supabase; redirige al usuario |
+
+### 5.2 Flujo Google OAuth
+
+```
+1. Usuario hace clic en "Continuar con Google"
+2. Frontend → GET /api/auth/google (backend en Render)
+3. Backend redirige a Google (URL de OAuth Supabase)
+4. Google autentica al usuario y redirige al callback del backend
+5. Backend recibe el código de autorización de Google
+6. Backend lo intercambia con Supabase por un JWT de sesión
+7. Backend redirige al frontend con el token en el hash de la URL:
+   https://currency-converter-one-iota-39.vercel.app/#access_token=...&refresh_token=...
+8. AuthContext.jsx lee el hash, limpia la URL, guarda en localStorage
+```
+
+El token viene en el **hash** (`#access_token=...`), no en query params, porque Supabase Auth lo coloca ahí por defecto en el flujo PKCE. El hash no se envía al servidor en requests HTTP, lo que evita que el token aparezca en logs de servidor.
 
 ---
 
@@ -243,7 +297,18 @@ El frontend no toca Supabase directamente. Si la fuente de datos cambia, solo se
 **Razón:** centraliza la construcción de la URL base (`VITE_API_URL`), facilita el logging de peticiones, y permite cambiar el backend o agregar headers globales (auth, version) en un solo lugar.  
 **Tradeoff:** mínimo — una indirección extra de función. Los servicios que usan `apiFetch` no necesitan conocer `VITE_API_URL`.
 
-### 6.8 `CountryCard` retorna `null` para códigos sin datos
+### 6.8 Auth opcional y sin bloqueo de UI
+
+**Decisión:** la autenticación es completamente opcional. El convertidor, las tasas y las country cards funcionan sin sesión. El historial también funciona en memoria sin sesión; solo la persistencia requiere login.  
+**Razón:** la funcionalidad principal no depende de una cuenta. Forzar login bloquearía el acceso inmediato y reduciría la utilidad percibida. El login se ofrece como mejora (persistencia del historial), no como requisito.
+
+### 6.9 RLS deshabilitado en `conversion_history`
+
+**Decisión:** RLS deshabilitado en la tabla `conversion_history`; la seguridad se aplica en el backend validando el Bearer token de Supabase Auth antes de cada operación de lectura o escritura.  
+**Razón:** el backend ya valida el token con `getMe()` y extrae el `user_id` del JWT. Añadir RLS crearía una segunda línea de seguridad redundante con la complejidad de que el backend necesitaría crear un cliente Supabase autenticado con el JWT del usuario en lugar de con `service_role`.  
+**Tradeoff:** si alguien obtiene acceso directo a Supabase (credenciales filtradas), puede leer todos los historiales. Mitigación: las credenciales solo están en las variables de entorno de Render.
+
+### 6.10 `CountryCard` retorna `null` para códigos sin datos
 
 **Decisión:** `if (!data) return null` como primera línea de `CountryCard`.  
 **Razón:** Hace el componente tolerante a gaps en los datos sin requerir lógica defensiva en el padre. Si en el futuro se agrega una moneda nueva sin agregar su entrada en `countriesData.js`, la card simplemente no aparece — sin error de runtime.
@@ -261,7 +326,11 @@ El frontend no toca Supabase directamente. Si la fuente de datos cambia, solo se
 - [x] Indicadores de estado: éxito (verde), error (rojo) al actualizar tasas
 - [x] Botón de intercambio con animación
 - [x] Diseño SAP Fiori completo con shell bar, paleta azul, responsive
-- [x] Historial de últimas 5 conversiones de la sesión (en memoria, no persistente)
+- [x] Historial de conversiones persistente en Supabase (`conversion_history`); en memoria para usuarios anónimos
+- [x] Autenticación opcional: email/contraseña y Google OAuth via Supabase Auth (vía backend)
+- [x] `AuthModal` con tabs login/registro y botón Google OAuth
+- [x] `UserMenu` en shell bar: botón login o avatar con dropdown de cerrar sesión
+- [x] Sincronización del historial al iniciar/cerrar sesión
 - [x] Frontend en Vercel: https://currency-converter-one-iota-39.vercel.app/
 - [x] **Backend propio en Render:** https://currency-converter-api-gk8z.onrender.com
 - [x] Migración completa: frontend no llama a ninguna API externa directamente
@@ -272,11 +341,12 @@ El frontend no toca Supabase directamente. Si la fuente de datos cambia, solo se
 
 ### Limitaciones conocidas
 - Los datos económicos de `countriesData.js` (inflación, PIB) son estáticos y aproximados a mayo 2026.
-- El historial de conversiones vive en memoria: se pierde al recargar la página.
+- El historial de usuarios anónimos (sin sesión) vive en memoria: se pierde al recargar la página.
 - El backend en Render (plan gratuito) puede tener cold starts de ~30 segundos tras inactividad.
 - `vite.config.js` y `vercel.json` conservan el proxy de frankfurter heredado (ya inactivo).
 - `index.css` y `src/assets/` tienen remanentes del template Vite sin auditar.
 - `LOCAL_STOCKS` solo tiene listas para USD, EUR, GBP, JPY y CNY; el resto usa `GLOBAL_STOCKS.slice(0,2)` como fallback.
+- No hay UI para eliminar entradas del historial (el endpoint `DELETE /api/history/:id` existe en el backend).
 
 ---
 
@@ -294,14 +364,17 @@ Datos de acciones vía Twelve Data: ticker animado en header, modal de mercado l
 ### Etapa 4 — Completada
 Backend propio en Render (`https://currency-converter-api-gk8z.onrender.com`): intermediario único entre el frontend y todas las APIs externas (frankfurter, Supabase, Twelve Data). El frontend usa `api-client.js` con `VITE_API_URL` como único punto de salida HTTP. La `service_role` de Supabase vive solo en el backend.
 
+### Etapa 5 — Completada
+Autenticación opcional (email/contraseña + Google OAuth) y historial de conversiones persistente en Supabase. `AuthProvider` + `useAuth()` gestionan el estado de sesión globalmente. `historyService.js` persiste cada conversión en la tabla `conversion_history` cuando hay sesión activa. El historial se sincroniza desde el backend al iniciar sesión y se limpia al cerrar sesión. `UserMenu` en la shell bar muestra el estado de autenticación. RLS deshabilitado en `conversion_history`; la seguridad se aplica en el backend.
+
 ---
 
 ## 8. Próximos pasos posibles
 
 Estos pasos **no están comprometidos** — son candidatos naturales según la trayectoria del proyecto:
 
-1. **Historial persistente de conversiones** — el backend ya tiene acceso a Supabase con `service_role`; solo falta el endpoint `POST /api/history` y la tabla correspondiente.
-2. **Caché de acciones en Supabase** — tabla `stocks_cache` con TTL compartida entre sesiones; el backend ya gestiona la lógica, solo falta persistirla en BD en lugar de memoria.
+1. **Eliminar entradas del historial** — el endpoint `DELETE /api/history/:id` ya existe; solo falta la UI (botón ✕ por fila).
+2. **Caché de acciones en Supabase** — tabla `stocks_cache` con TTL compartida entre sesiones; el backend ya gestiona la lógica, solo falta persistirla en BD.
 3. **Limpieza de proxies heredados** — eliminar la regla de frankfurter en `vite.config.js` y `vercel.json` (ya inactiva).
 4. **Ampliar `LOCAL_STOCKS`** — agregar listas de acciones locales para más divisas (ZAR, AUD, INR, etc.) con 2 símbolos cada una.
 5. **Gráfico de tendencia de divisas** — endpoint en el backend que consulte el histórico de frankfurter.app para los últimos 30 días.
